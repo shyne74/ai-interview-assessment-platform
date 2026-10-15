@@ -1,0 +1,39 @@
+# Node dependencies
+node_modules/
+*/node_modules/
+
+# Environment secrets (NEVER commit real API keys)
+.env
+.env.*
+*.env
+!.env.example
+
+# Python caches and virtual environments
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+.venv/
+env/
+
+# Build outputs
+dist/
+*/dist/
+build/
+*/build/
+
+# User uploads and runtime files
+uploads/
+*/uploads/
+*.log
+npm-debug.log*
+
+# OS and Editor configs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
