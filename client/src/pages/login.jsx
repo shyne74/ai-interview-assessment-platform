@@ -9,8 +9,11 @@ import {
     UserIcon,
     ArrowRightIcon,
     ZapIcon,
-    BarChartIcon
+    BarChartIcon,
+    SunIcon,
+    MoonIcon
 } from "../components/icons";
+import { useTheme } from "../context/ThemeContext";
 
 function Login() {
     const [email, setEmail] = useState("");
@@ -20,6 +23,7 @@ function Login() {
     const [showPassword, setShowPassword] = useState(false);
 
     const navigate = useNavigate();
+    const { theme, toggleTheme, isDark } = useTheme();
 
     const handleLogin = async (e) => {
         if (e) e.preventDefault();
@@ -162,10 +166,29 @@ function Login() {
                         </div>
 
                         {/* Right Column: Login Form */}
-                        <div className="col-lg-6 p-4 p-md-5 d-flex flex-column justify-content-center">
-                            <div className="mb-4">
-                                <h3 className="fw-bold text-white mb-1">Welcome back</h3>
-                                <p className="text-muted small">Enter your credentials to access your interview workspace.</p>
+                        <div className="col-lg-6 p-4 p-md-5 d-flex flex-column justify-content-center position-relative">
+                            <div className="d-flex justify-content-between align-items-start mb-4">
+                                <div>
+                                    <h3 className="fw-bold mb-1">Welcome back</h3>
+                                    <p className="text-muted small mb-0">Enter your credentials to access your interview workspace.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="theme-toggle-btn"
+                                    onClick={toggleTheme}
+                                    title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                                    aria-label="Toggle theme"
+                                >
+                                    <div className="theme-toggle-track">
+                                        <div className={`theme-toggle-thumb ${isDark ? "dark" : "light"}`}>
+                                            {isDark ? (
+                                                <MoonIcon size={14} className="text-indigo-400" />
+                                            ) : (
+                                                <SunIcon size={14} className="text-amber-500" />
+                                            )}
+                                        </div>
+                                    </div>
+                                </button>
                             </div>
 
                             {error && (

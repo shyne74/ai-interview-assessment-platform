@@ -1,10 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ThemeProvider } from "./context/ThemeContext";
 
 import Login from "./pages/login";
 import Register from "./pages/register";
 import Dashboard from "./pages/dashboard";
 import ProtectedRoute from "./components/protected_routes";
-import Navbar from "./components/navbar";
+import AppLayout from "./components/AppLayout";
 
 import Interview from "./pages/Interview";
 import AdaptiveInterview from "./pages/AdaptiveInterview";
@@ -25,42 +26,45 @@ import AdminDashboard from "./pages/adminDashboard";
 
 function App() {
     return (
-        <BrowserRouter>
-            <Navbar />
-            <Routes>
-                {/* Public Auth Routes */}
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
+        <ThemeProvider>
+            <BrowserRouter>
+                <Routes>
+                    {/* Public Auth Routes */}
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
 
-                {/* Protected Routes */}
-                <Route element={<ProtectedRoute />}>
-                    {/* CandidateSpace */}
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/adaptive-exam" element={<AdaptiveExamHub />} />
-                    <Route path="/adaptive" element={<AdaptiveExamHub />} />
-                    <Route path="/interview/:id" element={<Interview />} />
-                    <Route path="/adaptive-interview/:id" element={<AdaptiveInterview />} />
-                    <Route path="/results/:id" element={<Results />} />
-                    <Route path="/analytics" element={<Analytics />} />
-                    <Route path="/history" element={<History />} />
-                    <Route path="/profile" element={<Profile />} />
+                    {/* Protected Routes wrapped in AppLayout (Sidebar + TopBar) */}
+                    <Route element={<ProtectedRoute />}>
+                        <Route element={<AppLayout />}>
+                            {/* Candidate Space */}
+                            <Route path="/dashboard" element={<Dashboard />} />
+                            <Route path="/adaptive-exam" element={<AdaptiveExamHub />} />
+                            <Route path="/adaptive" element={<AdaptiveExamHub />} />
+                            <Route path="/interview/:id" element={<Interview />} />
+                            <Route path="/adaptive-interview/:id" element={<AdaptiveInterview />} />
+                            <Route path="/results/:id" element={<Results />} />
+                            <Route path="/analytics" element={<Analytics />} />
+                            <Route path="/history" element={<History />} />
+                            <Route path="/profile" element={<Profile />} />
 
-                    {/* Adminroute  */}
-                    <Route path="/admin-dashboard" element={<AdminDashboard />} />
-                    <Route path="/questionbank" element={<QuestionBank />} />
-                    <Route path="/aigenerator" element={<AIGenerator />} />
-                <Route path="/codeforces" element={<CodeforcesImporter />} />
-                    <Route path="/roles" element={<Roles />} />
-                    <Route path="/candidate-data" element={<CandidateData />} />
-                    <Route path="/admin-results" element={<AdminResults />} />
-                    <Route path="/admin-analytics" element={<AdminAnalytics />} />
-                </Route>
+                            {/* Administration Space */}
+                            <Route path="/admin-dashboard" element={<AdminDashboard />} />
+                            <Route path="/questionbank" element={<QuestionBank />} />
+                            <Route path="/aigenerator" element={<AIGenerator />} />
+                            <Route path="/codeforces" element={<CodeforcesImporter />} />
+                            <Route path="/roles" element={<Roles />} />
+                            <Route path="/candidate-data" element={<CandidateData />} />
+                            <Route path="/admin-results" element={<AdminResults />} />
+                            <Route path="/admin-analytics" element={<AdminAnalytics />} />
+                        </Route>
+                    </Route>
 
-                {/* Default Fallback Redirect */}
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-        </BrowserRouter>
+                    {/* Default Fallback Redirect */}
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+            </BrowserRouter>
+        </ThemeProvider>
     );
 }
 

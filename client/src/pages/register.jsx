@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
-import { BrainIcon, ArrowRightIcon, UserIcon, ShieldIcon } from "../components/icons";
+import { BrainIcon, ArrowRightIcon, UserIcon, ShieldIcon, SunIcon, MoonIcon } from "../components/icons";
+import { useTheme } from "../context/ThemeContext";
 
 function Register() {
     const [username, setUsername] = useState("");
@@ -12,6 +13,7 @@ function Register() {
     const [error, setError] = useState("");
 
     const navigate = useNavigate();
+    const { theme, toggleTheme, isDark } = useTheme();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -52,7 +54,27 @@ function Register() {
     return (
         <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center p-3 p-md-4">
             <div className="container" style={{ maxWidth: "540px" }}>
-                <div className="glass-card p-4 p-md-5">
+                <div className="glass-card p-4 p-md-5 position-relative">
+                    <div className="position-absolute" style={{ top: "1.5rem", right: "1.5rem" }}>
+                        <button
+                            type="button"
+                            className="theme-toggle-btn"
+                            onClick={toggleTheme}
+                            title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                            aria-label="Toggle theme"
+                        >
+                            <div className="theme-toggle-track">
+                                <div className={`theme-toggle-thumb ${isDark ? "dark" : "light"}`}>
+                                    {isDark ? (
+                                        <MoonIcon size={14} className="text-indigo-400" />
+                                    ) : (
+                                        <SunIcon size={14} className="text-amber-500" />
+                                    )}
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+
                     {/* Header */}
                     <div className="text-center mb-4">
                         <div
