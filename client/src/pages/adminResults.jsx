@@ -290,6 +290,70 @@ function AdminResults() {
                                 </div>
                             </div>
 
+                            {/* Integrity & Anti-Cheating Telemetry Report */}
+                            {selectedSubmission.interviewId?.responses && selectedSubmission.interviewId.responses.length > 0 && (
+                                <div className="mb-4">
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <h5 className="fw-bold text-white mb-0">Integrity & Telemetry Analysis</h5>
+                                        <span className="text-muted small">Layered verification per answer</span>
+                                    </div>
+                                    <div className="d-flex flex-column gap-3">
+                                        {selectedSubmission.interviewId.responses.map((resp, idx) => {
+                                            const report = resp.integrityReport || {};
+                                            const risk = report.riskLevel || "low";
+                                            const reasons = report.reasons || [];
+                                            const telemetry = resp.telemetry || {};
+
+                                            const riskBadgeClass = risk === "high" ? "badge-rejected" : risk === "medium" ? "badge-pending" : "badge-approved";
+
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    className="p-3 rounded-3 border"
+                                                    style={{
+                                                        background: risk === "high" ? "rgba(239, 68, 68, 0.08)" : "rgba(15, 23, 42, 0.6)",
+                                                        borderColor: risk === "high" ? "rgba(239, 68, 68, 0.4)" : "rgba(255, 255, 255, 0.08)"
+                                                    }}
+                                                >
+                                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                                        <span className="text-white small fw-bold">Answer #{idx + 1}</span>
+                                                        <span className={`badge-tech ${riskBadgeClass} text-uppercase`}>
+                                                            {risk} Risk
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Telemetry quick metrics */}
+                                                    <div className="d-flex flex-wrap gap-3 text-muted small mb-2">
+                                                        <span>Pastes: <strong>{telemetry.pasteAttempts || 0}</strong></span>
+                                                        <span>Keystrokes: <strong>{telemetry.keystrokesCount || 0}</strong></span>
+                                                        <span>Largest Chunk: <strong>{telemetry.largestInsertLength || 0} chars</strong></span>
+                                                        {telemetry.typingDurationMs > 0 && (
+                                                            <span>Typing Time: <strong>{Math.round(telemetry.typingDurationMs / 1000)}s</strong></span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Risk reasons */}
+                                                    {reasons.length > 0 ? (
+                                                        <div className="p-2 rounded bg-black bg-opacity-40">
+                                                            <span className="text-amber-400 small fw-semibold d-block mb-1">Flagged Evidence:</span>
+                                                            <ul className="mb-0 ps-3 text-white small">
+                                                                {reasons.map((r, rIdx) => (
+                                                                    <li key={rIdx}>{r}</li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-emerald-400 small">
+                                                            ✓ Consistent manual keystroke patterns verified
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
                             <button className="btn btn-secondary-dark w-100" onClick={() => setSelectedSubmission(null)}>
                                 Close Inspection
                             </button>

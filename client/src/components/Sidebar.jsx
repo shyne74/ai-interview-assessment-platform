@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
     BrainIcon,
@@ -42,10 +42,46 @@ export default function Sidebar({ isOpen, onClose }) {
         return (parts[0][0] + parts[1][0]).toUpperCase();
     };
 
+    // Detect ongoing active interview session
+    const [activeInterview, setActiveInterview] = useState(() => {
+        try {
+            const raw = localStorage.getItem("activeInterview");
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    });
+
+    useEffect(() => {
+        const checkActive = () => {
+            try {
+                const raw = localStorage.getItem("activeInterview");
+                setActiveInterview(raw ? JSON.parse(raw) : null);
+            } catch (e) {
+                setActiveInterview(null);
+            }
+        };
+
+        checkActive();
+        window.addEventListener("storage", checkActive);
+        return () => window.removeEventListener("storage", checkActive);
+    }, [location.pathname]);
+
+    const activeExamPath = activeInterview?.id
+        ? (activeInterview.type === "adaptive"
+            ? `/adaptive-interview/${activeInterview.id}`
+            : `/interview/${activeInterview.id}`)
+        : null;
+
     const candidateLinks = [
         { path: "/dashboard", label: "Dashboard", icon: <HomeIcon size={18} /> },
         { path: "/adaptive-exam", label: "Exam hub", icon: <ZapIcon size={18} className="text-amber-400" /> },
-        { path: "/interview/latest", label: "Live interview", icon: <PlayIcon size={18} />, action: () => navigate("/adaptive-exam") },
+        ...(activeExamPath ? [{
+            path: activeExamPath,
+            label: "Resume Interview",
+            icon: <PlayIcon size={18} className="text-emerald-400" />,
+            isLive: true
+        }] : []),
         { path: "/analytics", label: "My analytics", icon: <BarChartIcon size={18} /> },
         { path: "/history", label: "History", icon: <ClockIcon size={18} /> },
         { path: "/profile", label: "Profile", icon: <UserIcon size={18} /> }
@@ -119,38 +155,47 @@ export default function Sidebar({ isOpen, onClose }) {
                                             }
                                             if (onClose) onClose();
                                         }}
-                                        className={`sidebar-nav-item ${isActive ? "active" : ""}`}
+                                        className={`sidebar-nav-item ${isActive ? "active" : ""} ${item.isLive ? "border-emerald-500 bg-emerald-950 bg-opacity-20" : ""}`}
                                         title={item.label}
                                     >
                                         <span className="nav-item-icon">{item.icon}</span>
-                                        <span className="nav-item-label">{item.label}</span>
+                                        <span className="nav-item-label d-flex align-items-center justify-content-between flex-grow-1">
+                                            <span>{item.label}</span>
+                                            {item.isLive && (
+                                                <span className="badge bg-emerald-500 text-dark fw-bold px-1 py-0" style={{ fontSize: "0.65rem", letterSpacing: "0.05em" }}>
+                                                    LIVE
+                                                </span>
+                                            )}
+                                        </span>
                                     </Link>
                                 );
                             })}
                         </div>
                     </div>
 
-                    {/* ADMINISTRATION SECTION */}
-                    <div className="nav-section">
-                        <div className="nav-section-title">ADMINISTRATION</div>
-                        <div className="nav-list">
-                            {adminLinks.map((item) => {
-                                const isActive = location.pathname === item.path;
-                                return (
-                                    <Link
-                                        key={item.path}
-                                        to={item.path}
-                                        onClick={onClose}
-                                        className={`sidebar-nav-item ${isActive ? "active" : ""}`}
-                                        title={item.label}
-                                    >
-                                        <span className="nav-item-icon">{item.icon}</span>
-                                        <span className="nav-item-label">{item.label}</span>
-                                    </Link>
-                                );
-                            })}
+                    {/* ADMINISTRATION SECTION - Strictly Admin Only */}
+                    {isAdmin && (
+                        <div className="nav-section">
+                            <div className="nav-section-title">ADMINISTRATION</div>
+                            <div className="nav-list">
+                                {adminLinks.map((item) => {
+                                    const isActive = location.pathname === item.path;
+                                    return (
+                                        <Link
+                                            key={item.path}
+                                            to={item.path}
+                                            onClick={onClose}
+                                            className={`sidebar-nav-item ${isActive ? "active" : ""}`}
+                                            title={item.label}
+                                        >
+                                            <span className="nav-item-icon">{item.icon}</span>
+                                            <span className="nav-item-label">{item.label}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* User Profile Card at Bottom */}

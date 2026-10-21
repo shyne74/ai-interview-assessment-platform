@@ -8,8 +8,9 @@ export default function AppLayout() {
     const location = useLocation();
 
     const isAuthPage = location.pathname === "/login" || location.pathname === "/register";
+    const isExamPage = location.pathname.startsWith("/adaptive-interview") || location.pathname.startsWith("/interview");
 
-    if (isAuthPage) {
+    if (isAuthPage || isExamPage) {
         return <Outlet />;
     }
 

@@ -98,6 +98,7 @@ function AdaptiveExamHub() {
 
     const [selectedRole, setSelectedRole] = useState(PRESET_ROLES[0].title);
     const [selectedDomain, setSelectedDomain] = useState(PRESET_ROLES[0].domains[0]);
+    const [customDomain, setCustomDomain] = useState("");
     const [startingLevel, setStartingLevel] = useState(2);
     const [targetCount, setTargetCount] = useState(5);
     const [loading, setLoading] = useState(false);
@@ -108,16 +109,18 @@ function AdaptiveExamHub() {
         const matched = PRESET_ROLES.find((r) => r.title === selectedRole);
         if (matched && matched.domains.length > 0) {
             setSelectedDomain(matched.domains[0]);
+            setCustomDomain("");
         }
     }, [selectedRole]);
 
     const handleStartExam = async () => {
+        const effectiveDomain = customDomain.trim() || selectedDomain;
         try {
             setLoading(true);
             const response = await api.post("/adaptive/start", {
                 roleTitle: selectedRole,
                 role: selectedRole,
-                domain: selectedDomain,
+                domain: effectiveDomain,
                 startingLevel: Number(startingLevel),
                 questionCount: Number(targetCount),
                 targetCount: Number(targetCount)
@@ -127,6 +130,16 @@ function AdaptiveExamHub() {
             if (!interviewId) {
                 throw new Error("Interview session could not be created.");
             }
+
+            try {
+                localStorage.setItem("activeInterview", JSON.stringify({
+                    id: interviewId,
+                    type: "adaptive",
+                    roleTitle: selectedRole,
+                    domain: effectiveDomain,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {}
 
             navigate(`/adaptive-interview/${interviewId}`);
         } catch (err) {
@@ -252,11 +265,21 @@ function AdaptiveExamHub() {
                             </h5>
                             <div className="row g-3">
                                 <div className="col-md-6">
-                                    <label className="form-label text-secondary small fw-semibold">Target Domain</label>
+                                    <div className="d-flex justify-content-between align-items-center mb-1">
+                                        <label className="form-label text-secondary small fw-semibold mb-0">Target Domain</label>
+                                        {customDomain.trim() && (
+                                            <span className="badge-tech badge-cyan" style={{ fontSize: "0.68rem" }}>
+                                                ✨ Custom Active
+                                            </span>
+                                        )}
+                                    </div>
                                     <select
-                                        className="form-select form-control-custom"
-                                        value={selectedDomain}
-                                        onChange={(e) => setSelectedDomain(e.target.value)}
+                                        className="form-select form-control-custom mb-2"
+                                        value={customDomain.trim() ? "" : selectedDomain}
+                                        onChange={(e) => {
+                                            setSelectedDomain(e.target.value);
+                                            setCustomDomain("");
+                                        }}
                                     >
                                         {currentRoleObj.domains.map((dom) => (
                                             <option key={dom} value={dom}>
@@ -264,6 +287,30 @@ function AdaptiveExamHub() {
                                             </option>
                                         ))}
                                     </select>
+                                    <div className="position-relative">
+                                        <input
+                                            type="text"
+                                            className="form-control form-control-custom text-white"
+                                            placeholder="Or enter custom technology (e.g. Docker, Kafka, Terraform)..."
+                                            value={customDomain}
+                                            onChange={(e) => setCustomDomain(e.target.value)}
+                                        />
+                                        {customDomain && (
+                                            <button
+                                                type="button"
+                                                className="btn-icon-ghost position-absolute top-50 end-0 translate-middle-y me-2"
+                                                onClick={() => setCustomDomain("")}
+                                                style={{ color: "#94a3b8" }}
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+                                    </div>
+                                    {customDomain.trim() && (
+                                        <div className="text-cyan-400 small mt-1" style={{ fontSize: "0.75rem" }}>
+                                            ✨ AI will dynamically generate questions for <strong>{customDomain.trim()}</strong>.
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="col-md-6">
                                     <label className="form-label text-secondary small fw-semibold">Question Count</label>

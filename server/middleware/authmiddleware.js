@@ -28,8 +28,11 @@ exports.protect = async function(req, res, next) {
 
 exports.authorize = function(...role) {
     return function(req, res, next) {
+        if (!req.user) {
+            return res.status(401).json({ message: "User not authenticated" });
+        }
         if (!role.includes(req.user.role)) {
-            return res.status(403).json({ message: `user role ${req.user.role} is not authorized to access this route` })
+            return res.status(403).json({ message: `user role ${req.user.role} is not authorized to access this route` });
         }
         next();
     }

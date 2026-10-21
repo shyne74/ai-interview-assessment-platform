@@ -6,82 +6,27 @@ const fs = require("fs");
 const { cleanCodeforcesStatement } = require("../utils/statement_cleaner");
 const { seedCuratedCodeforces } = require("../utils/codeforces_curated_seed");
 
-function canonicalRole(r) {
-    if (!r || typeof r !== "string") return "Software Engineer";
-    let trimmed = r.trim().replace(/\s+/g, " ");
-    let lower = trimmed.toLowerCase();
-    
-    if (lower === "backend developer" || lower === "backend dev") return "Backend Developer";
-    if (lower === "full stack developer" || lower === "fullstack developer" || lower === "full stack dev") return "Full Stack Developer";
-    if (lower === "devops engineer" || lower === "devops") return "DevOps Engineer";
-    if (lower === "cloud engineer" || lower === "cloud") return "Cloud Engineer";
-    if (lower === "software develope" || lower === "software developer") return "Software Developer";
-    if (lower === "software engineer" || lower === "swe") return "Software Engineer";
-    if (lower === "system architect" || lower === "solutions architect") return "System Architect";
-    if (lower === "ai/ml engineer" || lower === "ai engineer" || lower === "ml engineer") return "AI/ML Engineer";
-    if (lower === "junior web developer" || lower === "web developer") return "Junior Web Developer";
-    if (lower === "support engineer" || lower === "it support") return "Support Engineer";
-    if (lower === "coding") return "Coding";
-    if (lower === "philosophy") return "Philosophy";
-    if (lower === "unknown") return "General Assessment";
+const {
+    ROLES,
+    ROLE_DOMAINS,
+    canonicalRole,
+    canonicalDomain,
+    isValidTaxonomy
+} = require("../config/taxonomy");
 
-    return trimmed
-        .toLowerCase()
-        .split(" ")
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
-}
-
-function canonicalDomain(domain, questionText = "", role = "") {
-    if (!domain || typeof domain !== "string") return "General";
-    let d = domain.trim();
-    let lower = d.toLowerCase();
-
-    if (lower === "express" || lower === "expressjs" || lower === "express.js") return "Express.js";
-    if (lower === "react" || lower === "reactjs" || lower === "react.js") return "React";
-    if (lower === "node" || lower === "nodejs" || lower === "node.js") return "Node.js";
-    if (lower === "algorithm" || lower === "algorithms") return "Algorithms";
-    if (lower === "python") return "Python";
-    if (lower === "database" || lower === "databases") return "Database";
-    if (lower === "document analysis") return "Document Analysis";
-    if (lower === "generative ai" || lower === "genai") return "Generative AI";
-    if (lower === "support engineering") return "Support Engineering";
-    if (lower === "system design & microservices") return "System Design & Microservices";
-    if (lower === "node.js & mongodb") return "Node.js & MongoDB";
-    if (lower === "javascript & html/css") return "JavaScript & HTML/CSS";
-    if (lower === "react & node.js") return "React & Node.js";
-
-    if (d.includes(",") || role.toLowerCase().includes("phil") || lower.includes("philosophy")) {
-        const text = (questionText + " " + d).toLowerCase();
-        if (text.includes("putnam") || text.includes("twin earth") || text.includes("semantic") || text.includes("language and meaning")) {
-            return "Philosophy of Language & Semantics";
-        }
-        if (text.includes("aquinas") || text.includes("five ways") || text.includes("scholasticism") || text.includes("theology") || text.includes("god")) {
-            return "Metaphysics & Theology";
-        }
-        if (text.includes("natural rights") || text.includes("two treatises") || text.includes("state of nature") || text.includes("political")) {
-            return "Political Philosophy & Natural Rights";
-        }
-        if (text.includes("locke") || text.includes("tabula rasa") || text.includes("empiric") || text.includes("epistemology") || text.includes("innate") || text.includes("primary and secondary")) {
-            return "Epistemology & Empiricism";
-        }
-        if (text.includes("plato") || text.includes("aristotle") || text.includes("socrates") || text.includes("cave") || text.includes("forms") || text.includes("greek") || text.includes("pre-socratic")) {
-            return "Ancient Greek Philosophy";
-        }
-        let firstTopic = d.split(",")[0].trim();
-        if (firstTopic.length > 35) firstTopic = firstTopic.slice(0, 35).trim();
-        return firstTopic;
-    }
-
-    return d
-        .replace(/\s+/g, " ")
-        .split(" ")
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
+function sanitizeQuestionDoc(doc) {
+    const role = canonicalRole(doc.role);
+    const domain = canonicalDomain(doc.domain, doc.questionText, role);
+    return {
+        ...doc,
+        role,
+        domain
+    };
 }
 
 exports.canonicalRole = canonicalRole;
 exports.canonicalDomain = canonicalDomain;
+exports.sanitizeQuestionDoc = sanitizeQuestionDoc;
 
 exports.createquestion = async function(req, res) {
     try {
@@ -136,7 +81,15 @@ exports.updatedQuestion = async function(req, res) {
             return res.status(404).json({ message: "question not found!" })
         }
 
-        const updatedQuestion = await Question.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
+        const updateData = { ...req.body };
+        if (updateData.role || updateData.domain) {
+            const role = updateData.role || question.role;
+            const domain = updateData.domain || question.domain;
+            updateData.role = canonicalRole(role);
+            updateData.domain = canonicalDomain(domain, updateData.questionText || question.questionText, updateData.role);
+        }
+
+        const updatedQuestion = await Question.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true })
 
         return res.json({ message: "question updated successfully", question: updatedQuestion })
     } catch (error) {
@@ -154,7 +107,7 @@ exports.deletequestion = async function(req, res) {
         return res.status(200).json({ message: "question deleted succesfully" })
     } catch (error) {
         return res.status(500).json({ message: error.message })
-    }
+    } 
 }
 
 exports.generatequestion = async function(req, res) {
@@ -172,11 +125,14 @@ exports.generatequestion = async function(req, res) {
         })
         const aiGeneratedQuestions = response.data.questions;
 
+        const effectiveRole = canonicalRole(role);
+        const effectiveDomain = canonicalDomain(domain, "", effectiveRole);
+
         const questionToSave = aiGeneratedQuestions.map(function(q) {
             return {
                 questionText: q.questionText,
-                role: role,
-                domain: domain,
+                role: effectiveRole,
+                domain: canonicalDomain(q.domain || effectiveDomain, q.questionText, effectiveRole),
                 type: q.type || "technical",
                 difficulty: difficulty,
                 timeLimit: q.timeLimit || 180,

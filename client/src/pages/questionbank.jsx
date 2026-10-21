@@ -19,82 +19,8 @@ import {
     ZapIcon
 } from "../components/icons";
 import Toast from "../components/Toast";
+import { canonicalRole, canonicalDomain, ROLES, ROLE_DOMAINS } from "../config/taxonomy";
 
-// Robust canonical role normalizer
-const canonicalRole = (r) => {
-    if (!r || typeof r !== "string") return "Software Engineer";
-    let trimmed = r.trim().replace(/\s+/g, " ");
-    let lower = trimmed.toLowerCase();
-    
-    if (lower === "backend developer" || lower === "backend dev") return "Backend Developer";
-    if (lower === "full stack developer" || lower === "fullstack developer" || lower === "full stack dev") return "Full Stack Developer";
-    if (lower === "devops engineer" || lower === "devops") return "DevOps Engineer";
-    if (lower === "cloud engineer" || lower === "cloud") return "Cloud Engineer";
-    if (lower === "software develope" || lower === "software developer") return "Software Developer";
-    if (lower === "software engineer" || lower === "swe") return "Software Engineer";
-    if (lower === "system architect" || lower === "solutions architect") return "System Architect";
-    if (lower === "ai/ml engineer" || lower === "ai engineer" || lower === "ml engineer") return "AI/ML Engineer";
-    if (lower === "junior web developer" || lower === "web developer") return "Junior Web Developer";
-    if (lower === "support engineer" || lower === "it support") return "Support Engineer";
-    if (lower === "coding") return "Coding";
-    if (lower === "philosophy") return "Philosophy";
-    if (lower === "unknown") return "General Assessment";
-
-    return trimmed
-        .toLowerCase()
-        .split(" ")
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
-};
-
-// Robust canonical domain normalizer
-const canonicalDomain = (domain, questionText = "", role = "") => {
-    if (!domain || typeof domain !== "string") return "General";
-    let d = domain.trim();
-    let lower = d.toLowerCase();
-
-    if (lower === "express" || lower === "expressjs" || lower === "express.js") return "Express.js";
-    if (lower === "react" || lower === "reactjs" || lower === "react.js") return "React";
-    if (lower === "node" || lower === "nodejs" || lower === "node.js") return "Node.js";
-    if (lower === "algorithm" || lower === "algorithms") return "Algorithms";
-    if (lower === "python") return "Python";
-    if (lower === "database" || lower === "databases") return "Database";
-    if (lower === "document analysis") return "Document Analysis";
-    if (lower === "generative ai" || lower === "genai") return "Generative AI";
-    if (lower === "support engineering") return "Support Engineering";
-    if (lower === "system design & microservices") return "System Design & Microservices";
-    if (lower === "node.js & mongodb") return "Node.js & MongoDB";
-    if (lower === "javascript & html/css") return "JavaScript & HTML/CSS";
-    if (lower === "react & node.js") return "React & Node.js";
-
-    if (d.includes(",") || (role && role.toLowerCase().includes("phil")) || lower.includes("philosophy")) {
-        const text = (questionText + " " + d).toLowerCase();
-        if (text.includes("putnam") || text.includes("twin earth") || text.includes("semantic") || text.includes("language and meaning")) {
-            return "Philosophy of Language & Semantics";
-        }
-        if (text.includes("aquinas") || text.includes("five ways") || text.includes("scholasticism") || text.includes("theology") || text.includes("god")) {
-            return "Metaphysics & Theology";
-        }
-        if (text.includes("natural rights") || text.includes("two treatises") || text.includes("state of nature") || text.includes("political")) {
-            return "Political Philosophy & Natural Rights";
-        }
-        if (text.includes("locke") || text.includes("tabula rasa") || text.includes("empiric") || text.includes("epistemology") || text.includes("innate") || text.includes("primary and secondary")) {
-            return "Epistemology & Empiricism";
-        }
-        if (text.includes("plato") || text.includes("aristotle") || text.includes("socrates") || text.includes("cave") || text.includes("forms") || text.includes("greek") || text.includes("pre-socratic")) {
-            return "Ancient Greek Philosophy";
-        }
-        let firstTopic = d.split(",")[0].trim();
-        if (firstTopic.length > 35) firstTopic = firstTopic.slice(0, 35).trim();
-        return firstTopic;
-    }
-
-    return d
-        .replace(/\s+/g, " ")
-        .split(" ")
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
-};
 
 function QuestionBank() {
     const location = useLocation();
@@ -226,7 +152,16 @@ function QuestionBank() {
             else map[r].domains[d].theoryCount += 1;
         });
 
-        return Object.values(map).sort((a, b) => b.total - a.total);
+        // Filter out any role folder or sub-domain with 0 questions
+        return Object.values(map)
+            .filter(r => r.total > 0)
+            .map(r => ({
+                ...r,
+                domains: Object.fromEntries(
+                    Object.entries(r.domains).filter(([_, d]) => d.total > 0)
+                )
+            }))
+            .sort((a, b) => b.total - a.total);
     }, [questions]);
 
     // Filtered Questions
@@ -643,7 +578,14 @@ function QuestionBank() {
                                                         <span className="text-muted small">{Object.keys(rf.domains).length} Domain Sub-folders</span>
                                                     </div>
                                                 </div>
-                                                <span className="badge-tech badge-cyan fw-bold">{rf.total} Qs</span>
+                                                <div className="d-flex align-items-center gap-1">
+                                                    {rf.total < 3 && (
+                                                        <span className="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50" style={{ fontSize: "0.68rem" }} title="Understocked folder (< 3 questions)">
+                                                            ⚠️ &lt; 3 Qs
+                                                        </span>
+                                                    )}
+                                                    <span className="badge-tech badge-cyan fw-bold">{rf.total} Qs</span>
+                                                </div>
                                             </div>
 
                                             {/* Sub-domain Badges with high contrast and neat layout */}
@@ -733,7 +675,14 @@ function QuestionBank() {
                                         <div>
                                             <div className="d-flex justify-content-between align-items-center mb-2">
                                                 <span className="fw-bold text-white small fs-6">📂 {dom.name}</span>
-                                                <span className="badge-tech badge-cyan">{dom.total} Qs</span>
+                                                <div className="d-flex align-items-center gap-1">
+                                                    {dom.total < 3 && (
+                                                        <span className="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50" style={{ fontSize: "0.68rem" }} title="Understocked folder (< 3 questions)">
+                                                            ⚠️ &lt; 3 Qs
+                                                        </span>
+                                                    )}
+                                                    <span className="badge-tech badge-cyan">{dom.total} Qs</span>
+                                                </div>
                                             </div>
                                             <div className="text-muted small mb-3">
                                                 <span>{dom.theoryCount} Theory • {dom.codingCount} Coding</span>

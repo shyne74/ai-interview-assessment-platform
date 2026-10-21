@@ -12,9 +12,37 @@ const adaptiveInterviewSchema = new mongoose.Schema({
     
     status: {
         type: String,
-        enum: ["in-progress", "completed"],
+        enum: ["in-progress", "submitted", "evaluated", "completed", "abandoned"],
         default: "in-progress"
     },
+    startedAt: {
+        type: Date,
+        default: Date.now
+    },
+    durationSeconds: {
+        type: Number,
+        default: 1800 // default 30 minutes
+    },
+    submittedAt: {
+        type: Date
+    },
+    evaluatedAt: {
+        type: Date
+    },
+    autoSubmittedReason: {
+        type: String,
+        default: ""
+    },
+    lastHeartbeatAt: {
+        type: Date,
+        default: Date.now
+    },
+    violations: [{
+        type: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now },
+        questionIndex: { type: Number, default: 0 },
+        details: { type: String, default: "" }
+    }],
     
     currentLevel: { type: Number, default: 2 }, // 1: Easy, 2: Medium, 3: Hard, 4: Expert
     currentDifficulty: { type: String, default: "medium" },
@@ -40,7 +68,27 @@ const adaptiveInterviewSchema = new mongoose.Schema({
         runningPointsTotal: Number,
         strength: String,
         weakness: String,
-        aiFeedback: String
+        aiFeedback: String,
+        telemetry: {
+          pasteAttempts: { type: Number, default: 0 },
+          copyAttempts: { type: Number, default: 0 },
+          keystrokesCount: { type: Number, default: 0 },
+          totalCharsTyped: { type: Number, default: 0 },
+          largestInsertLength: { type: Number, default: 0 },
+          typingDurationMs: { type: Number, default: 0 }
+        },
+        integrityReport: {
+          riskLevel: { type: String, enum: ["low", "medium", "high"], default: "low" },
+          reasons: [{ type: String }],
+          flags: {
+            pasteDetected: { type: Boolean, default: false },
+            lowKeystrokeRatio: { type: Boolean, default: false },
+            fastTypingSpeed: { type: Boolean, default: false },
+            suspiciousPatterns: { type: Boolean, default: false },
+            highIdealSimilarity: { type: Boolean, default: false }
+          },
+          details: { type: Object, default: {} }
+        }
     }],
     
     overallScore: { type: Number, default: 0 },

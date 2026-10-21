@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import api from "../services/api";
 import {
@@ -10,10 +10,12 @@ import {
     AlertTriangleIcon,
     FileTextIcon,
     SparklesIcon,
-    CodeIcon
+    CodeIcon,
+    ShieldIcon
 } from "../components/icons";
 import Toast from "../components/Toast";
 import { cleanStatement } from "../utils/formatters";
+import { useExamIntegrity } from "../hooks/useExamIntegrity";
 
 function Interview() {
     const { id } = useParams();
@@ -29,22 +31,100 @@ function Interview() {
             questionId: q._id,
             userAnswer: "",
             code: (q.assessmentType === "coding" || q.type === "coding") ? "" : undefined,
-            language: "javascript"
+            language: "javascript",
+            telemetry: {}
         }))
     );
 
-    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [remainingSeconds, setRemainingSeconds] = useState(1800);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [evaluating, setEvaluating] = useState(false);
     const [evalStep, setEvalStep] = useState(1);
     const [toast, setToast] = useState({ show: false, message: "", type: "info" });
+    const [hasStartedFullscreen, setHasStartedFullscreen] = useState(false);
+    const [isReadOnly, setIsReadOnly] = useState(false);
+    const [isSubmitted, setIsSubmitted] = useState(false);
+    const [activeWorkspaceMode, setActiveWorkspaceMode] = useState(null); // null (auto) | "text" | "code"
 
-    // Fetch interview session if not provided via router state
+    const answersRef = useRef(answers);
     useEffect(() => {
-        if (questions.length === 0 && id) {
+        answersRef.current = answers;
+    }, [answers]);
+
+    const isSubmittedRef = useRef(isSubmitted);
+    useEffect(() => {
+        isSubmittedRef.current = isSubmitted;
+    }, [isSubmitted]);
+
+    // Auto-submit callback triggered by integrity violation or server expiry
+    const handleAutoSubmit = useCallback(async (reason) => {
+        if (isSubmittedRef.current) return;
+        setIsSubmitted(true);
+        setEvaluating(true);
+        try {
+            await api.post(`/interviews/${id}/submit`, {
+                answers: answersRef.current,
+                reason: reason === "integrity_violation" ? "auto-submitted: integrity violation" : "auto-submitted: time expired"
+            });
+            await api.post(`/results/${id}/analyze`);
+            localStorage.removeItem("activeInterview");
+            navigate(`/results/${id}`, { replace: true });
+        } catch (err) {
+            localStorage.removeItem("activeInterview");
+            navigate(`/results/${id}`, { replace: true });
+        }
+    }, [id, navigate]);
+
+    // Exam integrity hook
+    const integrity = useExamIntegrity({
+        examId: id,
+        examType: "interview",
+        currentQuestionIndex: currentIndex,
+        maxViolations: 2,
+        isCompleted: isSubmitted || isReadOnly,
+        isStarted: hasStartedFullscreen,
+        onAutoSubmit: handleAutoSubmit
+    });
+
+    // History guard to lock navigation after submission
+    useEffect(() => {
+        if (isSubmitted || isReadOnly) {
+            window.history.replaceState(null, "", `/results/${id}`);
+            const handlePopState = (e) => {
+                e.preventDefault();
+                navigate(`/results/${id}`, { replace: true });
+            };
+            window.addEventListener("popstate", handlePopState);
+            return () => window.removeEventListener("popstate", handlePopState);
+        }
+    }, [isSubmitted, isReadOnly, id, navigate]);
+
+    // Fetch interview session and enforce state
+    useEffect(() => {
+        if (id) {
             setLoadingSession(true);
             api.get(`/interviews/${id}`)
                 .then((res) => {
+                    const sessionStatus = res.data?.status || res.data?.interview?.status;
+                    if (sessionStatus === "evaluated" || sessionStatus === "completed" || sessionStatus === "submitted") {
+                        setIsReadOnly(true);
+                        setIsSubmitted(true);
+                        localStorage.removeItem("activeInterview");
+                        navigate(`/results/${id}`, { replace: true });
+                        return;
+                    }
+
+                    // Store active session in localStorage
+                    try {
+                        localStorage.setItem("activeInterview", JSON.stringify({
+                            id,
+                            type: "standard",
+                            roleTitle: res.data?.roleTitle || "Technical Round",
+                            domain: res.data?.domain || "General",
+                            timestamp: Date.now()
+                        }));
+                    } catch (e) {}
+
                     const loadedQuestions = res.data?.questions || [];
                     if (loadedQuestions.length > 0) {
                         setQuestions(loadedQuestions);
@@ -53,9 +133,21 @@ function Interview() {
                                 questionId: q._id,
                                 userAnswer: "",
                                 code: (q.assessmentType === "coding" || q.type === "coding") ? "" : undefined,
-                                language: "javascript"
+                                language: "javascript",
+                                telemetry: {}
                             }))
                         );
+                    }
+
+                    // Server authoritative duration and startedAt
+                    const interviewDoc = res.data?.interview;
+                    if (interviewDoc && interviewDoc.startedAt && interviewDoc.durationSeconds) {
+                        const deadline = new Date(interviewDoc.startedAt).getTime() + (interviewDoc.durationSeconds * 1000);
+                        const left = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
+                        setRemainingSeconds(left);
+                        if (left === 0) {
+                            handleAutoSubmit("time_expired");
+                        }
                     }
                 })
                 .catch((err) => {
@@ -65,15 +157,24 @@ function Interview() {
                     setLoadingSession(false);
                 });
         }
-    }, [id]);
+    }, [id, navigate]);
 
-    // Timer effect
+    // Server-authoritative timer countdown effect
     useEffect(() => {
+        if (isSubmitted || isReadOnly || !hasStartedFullscreen) return;
+
         const timer = setInterval(() => {
-            setElapsedSeconds((prev) => prev + 1);
+            setRemainingSeconds((prev) => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    handleAutoSubmit("time_expired");
+                    return 0;
+                }
+                return prev - 1;
+            });
         }, 1000);
         return () => clearInterval(timer);
-    }, []);
+    }, [isSubmitted, isReadOnly, hasStartedFullscreen, handleAutoSubmit]);
 
     // Format timer MM:SS
     const formatTime = (secs) => {
@@ -82,10 +183,13 @@ function Interview() {
         return `${mins.toString().padStart(2, "0")}:${remaining.toString().padStart(2, "0")}`;
     };
 
-    const handleAnswerChange = (text) => {
+    const handleAnswerChange = (text, e) => {
+        if (integrity.handleInputKeystroke && e) {
+            integrity.handleInputKeystroke(e);
+        }
         setAnswers((prev) =>
             prev.map((item, idx) =>
-                idx === currentIndex ? { ...item, userAnswer: text } : item
+                idx === currentIndex ? { ...item, userAnswer: text, telemetry: integrity.getTelemetry() } : item
             )
         );
     };
@@ -94,18 +198,19 @@ function Interview() {
     
     // Accurately determine question type: theory is strictly written text by default
     const isCodingQuestion = (currentQuestion?.assessmentType === "coding" || Boolean(currentQuestion?.codingData?.samples?.length) || currentQuestion?.type === "coding") && currentQuestion?.assessmentType !== "theory";
-
-    const [activeWorkspaceMode, setActiveWorkspaceMode] = useState(null); // null (auto) | "text" | "code"
     const effectiveIsCoding = activeWorkspaceMode !== null ? activeWorkspaceMode === "code" : isCodingQuestion;
 
     const currentAnswer = answers[currentIndex]?.userAnswer || "";
     const currentCode = answers[currentIndex]?.code || "";
     const currentLanguage = answers[currentIndex]?.language || "javascript";
 
-    const handleCodeChange = (codeText) => {
+    const handleCodeChange = (codeText, e) => {
+        if (integrity.handleInputKeystroke && e) {
+            integrity.handleInputKeystroke(e);
+        }
         setAnswers((prev) =>
             prev.map((item, idx) =>
-                idx === currentIndex ? { ...item, code: codeText, userAnswer: item.userAnswer || codeText } : item
+                idx === currentIndex ? { ...item, code: codeText, userAnswer: item.userAnswer || codeText, telemetry: integrity.getTelemetry() } : item
             )
         );
     };
@@ -130,8 +235,8 @@ function Interview() {
     const handleSubmitInterview = async () => {
         setShowConfirmModal(false);
         setEvaluating(true);
+        setIsSubmitted(true);
 
-        // Animate evaluation steps
         const stepTimer = setInterval(() => {
             setEvalStep((prev) => (prev < 4 ? prev + 1 : prev));
         }, 900);
@@ -143,6 +248,7 @@ function Interview() {
 
             await api.post(`/results/${id}/analyze`);
 
+            localStorage.removeItem("activeInterview");
             clearInterval(stepTimer);
             navigate(`/results/${id}`);
         } catch (err) {
@@ -189,6 +295,45 @@ function Interview() {
         );
     }
 
+    // Gate: Must click button to enter proctored fullscreen environment
+    if (!hasStartedFullscreen) {
+        return (
+            <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center p-4">
+                <div className="glass-card p-5 text-center" style={{ maxWidth: "560px", background: "rgba(15, 23, 42, 0.95)" }}>
+                    <div
+                        className="pulse-glow d-inline-flex align-items-center justify-content-center rounded-circle mb-4"
+                        style={{ width: "80px", height: "80px", background: "linear-gradient(135deg, #6366f1, #06b6d4)", color: "#fff" }}
+                    >
+                        <ShieldIcon size={40} />
+                    </div>
+                    <h3 className="fw-bold text-white mb-2">Proctored Assessment Environment</h3>
+                    <p className="text-secondary small mb-4">
+                        This exam requires a secure, fullscreen browser environment. Tab switches, exiting fullscreen, window unfocusing, and copy-paste are actively monitored and logged to ensure assessment integrity.
+                    </p>
+
+                    <div className="p-3 rounded-3 text-start mb-4" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
+                        <div className="text-white small fw-semibold mb-2">⚠️ Integrity Policy:</div>
+                        <ul className="text-muted small mb-0 ps-3">
+                            <li>Keep this window in fullscreen throughout the test.</li>
+                            <li>Do not switch tabs or open other applications.</li>
+                            <li>Exceeding 2 integrity violations will automatically submit your exam.</li>
+                        </ul>
+                    </div>
+
+                    <button
+                        className="btn btn-primary-gradient w-100 py-3 fw-bold"
+                        onClick={async () => {
+                            await integrity.enterFullscreen();
+                            setHasStartedFullscreen(true);
+                        }}
+                    >
+                        Start Exam in Fullscreen
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-vh-100 tech-grid-bg pb-5">
             {toast.show && (
@@ -198,6 +343,29 @@ function Interview() {
                     onClose={() => setToast({ ...toast, show: false })}
                 />
             )}
+
+            {/* Violation Warning Modal */}
+            {integrity.showWarningModal && (
+                <div className="modal-backdrop-custom" style={{ zIndex: 10000 }}>
+                    <div className="glass-card p-4 p-md-5 text-center" style={{ maxWidth: "520px", background: "rgba(30, 10, 15, 0.98)", border: "2px solid #ef4444" }}>
+                        <AlertTriangleIcon size={48} className="text-rose-400 mb-3" />
+                        <h4 className="fw-bold text-white mb-2">Integrity Warning Recorded</h4>
+                        <p className="text-white small mb-3">
+                            {integrity.lastViolationMsg}
+                        </p>
+                        <div className="badge-tech badge-rejected mb-4">
+                            Violation {integrity.violationCount} of {integrity.maxViolations} Max Allowed
+                        </div>
+                        <button
+                            className="btn btn-primary-gradient w-100"
+                            onClick={integrity.enterFullscreen}
+                        >
+                            Return to Fullscreen & Resume Exam
+                        </button>
+                    </div>
+                </div>
+            )}
+
 
             {/* AI Evaluation Loading Overlay */}
             {evaluating && (
@@ -282,11 +450,11 @@ function Interview() {
                         </div>
 
                         <div className="d-flex align-items-center gap-4">
-                            {/* Elapsed Timer */}
-                            <div className="d-flex align-items-center gap-2 text-secondary px-3 py-1 rounded-pill" style={{ background: "rgba(255, 255, 255, 0.05)", border: "1px solid var(--border-subtle)" }}>
-                                <ClockIcon size={15} className="text-indigo-400" />
+                            {/* Countdown Timer */}
+                            <div className={`d-flex align-items-center gap-2 px-3 py-1 rounded-pill ${remainingSeconds < 300 ? "text-danger border-danger" : "text-secondary"}`} style={{ background: "rgba(255, 255, 255, 0.05)", border: "1px solid var(--border-subtle)" }}>
+                                <ClockIcon size={15} className={remainingSeconds < 300 ? "text-rose-400" : "text-indigo-400"} />
                                 <span className="font-monospace text-white fw-bold small">
-                                    {formatTime(elapsedSeconds)}
+                                    {formatTime(remainingSeconds)} left
                                 </span>
                             </div>
 
@@ -415,7 +583,10 @@ function Interview() {
                                         rows="12"
                                         placeholder={`// Write your ${currentLanguage} solution here...\nfunction solve(input) {\n    // Implement optimal approach\n    return result;\n}`}
                                         value={currentCode || currentAnswer}
-                                        onChange={(e) => handleCodeChange(e.target.value)}
+                                        onChange={(e) => handleCodeChange(e.target.value, e)}
+                                        onPaste={integrity.handlePaste}
+                                        onCopy={integrity.handleCopyCut}
+                                        onCut={integrity.handleCopyCut}
                                         style={{ lineHeight: 1.5, fontSize: "0.9rem", background: "rgba(10, 15, 30, 0.9)", color: "#38bdf8" }}
                                     />
                                     <div className="d-flex justify-content-between align-items-center mt-2 text-muted small">
@@ -446,7 +617,10 @@ function Interview() {
                                         rows="10"
                                         placeholder="Type your structured explanation here. Detail underlying principles, core definitions, logical arguments, and nuanced trade-offs..."
                                         value={currentAnswer}
-                                        onChange={(e) => handleAnswerChange(e.target.value)}
+                                        onChange={(e) => handleAnswerChange(e.target.value, e)}
+                                        onPaste={integrity.handlePaste}
+                                        onCopy={integrity.handleCopyCut}
+                                        onCut={integrity.handleCopyCut}
                                         style={{ lineHeight: 1.6, fontSize: "0.925rem" }}
                                     />
                                 </div>

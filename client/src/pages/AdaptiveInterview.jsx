@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
 import {
@@ -8,10 +8,12 @@ import {
     SparklesIcon,
     AlertTriangleIcon,
     ZapIcon,
-    ClockIcon
+    ClockIcon,
+    ShieldIcon
 } from "../components/icons";
 import Toast from "../components/Toast";
 import { cleanStatement } from "../utils/formatters";
+import { useExamIntegrity } from "../hooks/useExamIntegrity";
 
 const LEVEL_MAP = {
     1: { name: "Level 1 - Beginner", badge: "badge-approved", color: "#10b981", icon: "🌱", difficulty: "Easy" },
@@ -38,33 +40,95 @@ function AdaptiveInterview() {
     const [currentStreak, setCurrentStreak] = useState(0);
     const [questionIndex, setQuestionIndex] = useState(1);
     const [targetCount, setTargetCount] = useState(5);
+    const [remainingSeconds, setRemainingSeconds] = useState(1800);
+    const [hasStartedFullscreen, setHasStartedFullscreen] = useState(false);
 
     const [toast, setToast] = useState({ show: false, message: "", type: "info" });
+
+    // Auto-submit callback
+    const handleAutoSubmit = useCallback(async (reason) => {
+        setFinished(true);
+        localStorage.removeItem("activeInterview");
+        try {
+            const sessionRes = await api.get(`/adaptive/${id}`);
+            if (sessionRes.data?.interview) {
+                setInterviewData(sessionRes.data.interview);
+            }
+        } catch (e) {
+            console.error("Error refreshing session upon auto-submit", e);
+        }
+    }, [id]);
+
+    // Exam integrity hook
+    const integrity = useExamIntegrity({
+        examId: id,
+        examType: "adaptive",
+        currentQuestionIndex: questionIndex,
+        maxViolations: 2,
+        isCompleted: finished,
+        isStarted: hasStartedFullscreen,
+        onAutoSubmit: handleAutoSubmit
+    });
+
+    // History lock: once finished, lock back button
+    useEffect(() => {
+        if (finished) {
+            window.history.replaceState(null, "", `/adaptive-interview/${id}`);
+            const handlePopState = (e) => {
+                e.preventDefault();
+                navigate("/dashboard", { replace: true });
+            };
+            window.addEventListener("popstate", handlePopState);
+            return () => window.removeEventListener("popstate", handlePopState);
+        }
+    }, [finished, id, navigate]);
 
     const fetchNextQuestion = async () => {
         try {
             setLoading(true);
             setEvaluation(null);
             setUserAnswer("");
+            integrity.resetTelemetry();
 
             const response = await api.get(`/adaptive/${id}/next`);
 
             if (response.data.isFinished) {
                 setFinished(true);
+                localStorage.removeItem("activeInterview");
                 if (response.data.interview) {
                     setInterviewData(response.data.interview);
                 } else {
-                    // Fetch full interview session for summary
                     const sessionRes = await api.get(`/adaptive/${id}`);
                     setInterviewData(sessionRes.data.interview);
                 }
             } else {
+                try {
+                    localStorage.setItem("activeInterview", JSON.stringify({
+                        id,
+                        type: "adaptive",
+                        roleTitle: response.data.roleTitle || "Adaptive Assessment",
+                        domain: response.data.domain || "Adaptive Track",
+                        timestamp: Date.now()
+                    }));
+                } catch (e) {}
                 setCurrentQuestion(response.data.question);
                 setCurrentLevel(response.data.currentLevel || 2);
                 setTotalPoints(response.data.totalPoints || 0);
                 setCurrentStreak(response.data.currentStreak || 0);
                 setQuestionIndex(response.data.questionIndex || 1);
                 setTargetCount(response.data.targetCount || 5);
+
+                // Fetch session for timer
+                const sessionRes = await api.get(`/adaptive/${id}`);
+                const sess = sessionRes.data?.interview;
+                if (sess && sess.startedAt && sess.durationSeconds) {
+                    const deadline = new Date(sess.startedAt).getTime() + (sess.durationSeconds * 1000);
+                    const left = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
+                    setRemainingSeconds(left);
+                    if (left === 0) {
+                        handleAutoSubmit("time_expired");
+                    }
+                }
             }
         } catch (err) {
             setToast({
@@ -82,6 +146,30 @@ function AdaptiveInterview() {
         // eslint-disable-next-line
     }, [id]);
 
+    // Timer countdown
+    useEffect(() => {
+        if (finished || !hasStartedFullscreen) return;
+
+        const timer = setInterval(() => {
+            setRemainingSeconds((prev) => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    handleAutoSubmit("time_expired");
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [finished, hasStartedFullscreen, handleAutoSubmit]);
+
+    // Format timer MM:SS
+    const formatTime = (secs) => {
+        const mins = Math.floor(secs / 60);
+        const remaining = secs % 60;
+        return `${mins.toString().padStart(2, "0")}:${remaining.toString().padStart(2, "0")}`;
+    };
+
     const submitAnswer = async () => {
         if (!userAnswer.trim()) {
             setToast({
@@ -96,7 +184,8 @@ function AdaptiveInterview() {
             setSubmitting(true);
             const response = await api.post(`/adaptive/${id}/submit`, {
                 questionId: currentQuestion._id,
-                userAnswer: userAnswer
+                userAnswer: userAnswer,
+                telemetry: integrity.getTelemetry()
             });
 
             const evalResult = response.data.evaluation;
@@ -233,6 +322,45 @@ function AdaptiveInterview() {
         );
     }
 
+    // Fullscreen gate
+    if (!hasStartedFullscreen) {
+        return (
+            <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center p-4">
+                <div className="glass-card p-5 text-center" style={{ maxWidth: "560px", background: "rgba(15, 23, 42, 0.95)" }}>
+                    <div
+                        className="pulse-glow d-inline-flex align-items-center justify-content-center rounded-circle mb-4"
+                        style={{ width: "80px", height: "80px", background: "linear-gradient(135deg, #6366f1, #06b6d4)", color: "#fff" }}
+                    >
+                        <ShieldIcon size={40} />
+                    </div>
+                    <h3 className="fw-bold text-white mb-2">Proctored Adaptive Exam</h3>
+                    <p className="text-secondary small mb-4">
+                        This dynamic adaptive assessment requires an undisturbed fullscreen environment. Tab switching, window blur, and copy-paste are actively monitored and logged to protect assessment integrity.
+                    </p>
+
+                    <div className="p-3 rounded-3 text-start mb-4" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
+                        <div className="text-white small fw-semibold mb-2">⚠️ Integrity Policy:</div>
+                        <ul className="text-muted small mb-0 ps-3">
+                            <li>Keep this window in fullscreen throughout the test.</li>
+                            <li>Do not switch tabs or open other applications.</li>
+                            <li>Exceeding 2 integrity violations will automatically submit your exam.</li>
+                        </ul>
+                    </div>
+
+                    <button
+                        className="btn btn-primary-gradient w-100 py-3 fw-bold"
+                        onClick={async () => {
+                            await integrity.enterFullscreen();
+                            setHasStartedFullscreen(true);
+                        }}
+                    >
+                        Start Exam in Fullscreen
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-vh-100 tech-grid-bg py-4 py-md-5">
             {toast.show && (
@@ -241,6 +369,28 @@ function AdaptiveInterview() {
                     type={toast.type}
                     onClose={() => setToast({ ...toast, show: false })}
                 />
+            )}
+
+            {/* Violation Warning Modal */}
+            {integrity.showWarningModal && (
+                <div className="modal-backdrop-custom" style={{ zIndex: 10000 }}>
+                    <div className="glass-card p-4 p-md-5 text-center" style={{ maxWidth: "520px", background: "rgba(30, 10, 15, 0.98)", border: "2px solid #ef4444" }}>
+                        <AlertTriangleIcon size={48} className="text-rose-400 mb-3" />
+                        <h4 className="fw-bold text-white mb-2">Integrity Warning Recorded</h4>
+                        <p className="text-white small mb-3">
+                            {integrity.lastViolationMsg}
+                        </p>
+                        <div className="badge-tech badge-rejected mb-4">
+                            Violation {integrity.violationCount} of {integrity.maxViolations} Max Allowed
+                        </div>
+                        <button
+                            className="btn btn-primary-gradient w-100"
+                            onClick={integrity.enterFullscreen}
+                        >
+                            Return to Fullscreen & Resume Exam
+                        </button>
+                    </div>
+                </div>
             )}
 
             <div className="container" style={{ maxWidth: "900px" }}>
@@ -264,6 +414,14 @@ function AdaptiveInterview() {
 
                         {/* HUD Stats Counters */}
                         <div className="d-flex align-items-center gap-3">
+                            {/* Remaining Timer */}
+                            <div className={`d-flex align-items-center gap-2 px-3 py-1 rounded-3 ${remainingSeconds < 300 ? "text-danger border border-danger" : "text-secondary"}`} style={{ background: "rgba(255, 255, 255, 0.05)" }}>
+                                <ClockIcon size={14} className={remainingSeconds < 300 ? "text-rose-400" : "text-indigo-400"} />
+                                <span className="font-monospace text-white fw-bold small">
+                                    {formatTime(remainingSeconds)} left
+                                </span>
+                            </div>
+
                             {/* Current Level Badge */}
                             <div className="text-end">
                                 <span className="text-muted small d-block">Difficulty Tier</span>
@@ -285,14 +443,6 @@ function AdaptiveInterview() {
                                 <span className="text-secondary small d-block">Score</span>
                                 <strong className="text-indigo-400 fs-6">{totalPoints} PTS</strong>
                             </div>
-
-                            {/* Streak Multiplier */}
-                            {currentStreak > 0 && (
-                                <div className="text-end px-3 py-1 rounded-3" style={{ background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
-                                    <span className="text-secondary small d-block">Streak</span>
-                                    <strong className="text-amber-400 fs-6">🔥 {currentStreak}x</strong>
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>
@@ -337,7 +487,13 @@ function AdaptiveInterview() {
                                     rows="7"
                                     placeholder="Type your structured answer here. Include architectural considerations, code patterns, performance trade-offs, and edge cases..."
                                     value={userAnswer}
-                                    onChange={(e) => setUserAnswer(e.target.value)}
+                                    onChange={(e) => {
+                                        if (integrity.handleInputKeystroke) integrity.handleInputKeystroke(e);
+                                        setUserAnswer(e.target.value);
+                                    }}
+                                    onPaste={integrity.handlePaste}
+                                    onCopy={integrity.handleCopyCut}
+                                    onCut={integrity.handleCopyCut}
                                     disabled={submitting || evaluation}
                                     style={{ lineHeight: 1.6, fontSize: "0.925rem" }}
                                 />

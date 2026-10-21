@@ -17,7 +17,7 @@ exports.analyzeResult = async function(req,res){
         return res.status(404).json({message:"interview not found"})
     }
 
-    if(interview.status!=="completed"){
+    if(interview.status !== "completed" && interview.status !== "evaluated"){
         return res.status(400).json({message:"please complete the interview before"})
    }
 
@@ -143,7 +143,10 @@ exports.getallresults = async function(req,res){
 
 exports.getAllResultsAdmin = async function(req,res){
     try{
-        const results = await ResultAnalysis.find().populate("candidateId","username email").sort({createdAt:-1})
+        const results = await ResultAnalysis.find()
+            .populate("candidateId","username email")
+            .populate("interviewId")
+            .sort({createdAt:-1});
         return res.status(200).json({results})
     }catch(error){
         return res.status(500).json({message:error.message})
