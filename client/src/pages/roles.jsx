@@ -1,257 +1,527 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import api from "../services/api";
-import {
-    BriefcaseIcon,
-    PlusIcon,
-    ArrowRightIcon,
-    BrainIcon,
-    SparklesIcon
-} from "../components/icons";
-import Toast from "../components/Toast";
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import api from "../utils/api";
 
-function Roles() {
-    const [roles, setRoles] = useState([]);
+export default function Roles() {
+    const [rolesList, setRolesList] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
-    const [toast, setToast] = useState({ show: false, message: "", type: "info" });
 
-    const navigate = useNavigate();
+    // Active edit role
+    const [editingRole, setEditingRole] = useState(null);
+    const [roleTitle, setRoleTitle] = useState("");
+    const [roleDesc, setRoleDesc] = useState("");
+    const [domains, setDomains] = useState([]);
+    const [aliases, setAliases] = useState([]);
+    const [saveToast, setSaveToast] = useState("");
+    const [errorToast, setErrorToast] = useState("");
+    const [saving, setSaving] = useState(false);
 
-    const [form, setForm] = useState({
-        title: "",
-        description: ""
-    });
+    // New role modal
+    const [newRoleModalOpen, setNewRoleModalOpen] = useState(false);
+    const [newTitle, setNewTitle] = useState("");
+    const [newDesc, setNewDesc] = useState("");
+    const [newDomainInput, setNewDomainInput] = useState("");
+    const [creatingRole, setCreatingRole] = useState(false);
 
-    const fetchRoles = async () => {
+    const fetchDbRoles = async () => {
         try {
             setLoading(true);
-            const response = await api.get("/roles");
-            setRoles(response.data.roles || response.data || []);
+            const res = await api.get("/roles");
+            const dbRoles = res.data.roles || [];
+            
+            const mapped = dbRoles.map((r, i) => ({
+                id: r._id || `role-${i}`,
+                _id: r._id,
+                title: r.title,
+                description: r.description || "",
+                domains: Array.isArray(r.domains) && r.domains.length > 0 ? r.domains : ["General"],
+                aliases: Array.isArray(r.aliases) ? r.aliases : [],
+                questions: typeof r.questions === "number" ? r.questions : 0,
+                status: r.status || "Active"
+            }));
+
+            setRolesList(mapped);
+            if (mapped.length > 0) {
+                // If currently editing, keep it selected or pick the first
+                const current = editingRole ? mapped.find(m => m.id === editingRole.id) : null;
+                const toSelect = current || mapped[0];
+                selectRole(toSelect);
+            } else {
+                setEditingRole(null);
+            }
         } catch (err) {
-            console.log(err.response?.data || err.message);
+            console.error("Failed to load roles:", err);
+            setErrorToast("Failed to load roles from backend.");
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchRoles();
+        fetchDbRoles();
     }, []);
 
-    const handleChange = (e) => {
-        setForm({
-            ...form,
-            [e.target.name]: e.target.value
-        });
+    const selectRole = (r) => {
+        setEditingRole(r);
+        setRoleTitle(r.title);
+        setRoleDesc(r.description || `Focuses on ${r.title} best practices and architecture.`);
+        setDomains(r.domains || ["General"]);
+        setAliases(r.aliases || []);
+        setErrorToast("");
+        setSaveToast("");
     };
 
-    const handleSubmit = async (e) => {
+    const removeDomain = (dom) => {
+        setDomains(domains.filter((d) => d !== dom));
+    };
+
+    const addDomain = () => {
+        const val = prompt("Enter new domain for this role:");
+        if (val && val.trim() && !domains.includes(val.trim())) {
+            setDomains([...domains, val.trim()]);
+        }
+    };
+
+    const removeAlias = (alias) => {
+        setAliases(aliases.filter((a) => a !== alias));
+    };
+
+    const addAlias = () => {
+        const val = prompt("Enter new role alias (e.g. 'Backend Engineer'):");
+        if (val && val.trim() && !aliases.includes(val.trim())) {
+            setAliases([...aliases, val.trim()]);
+        }
+    };
+
+    const handleSave = async (e) => {
         e.preventDefault();
-        setSubmitting(true);
+        if (!editingRole) return;
+
+        setSaving(true);
+        setErrorToast("");
+        setSaveToast("");
 
         try {
-            await api.post("/roles", {
-                title: form.title.trim(),
-                description: form.description.trim()
-            });
+            const payload = {
+                title: roleTitle.trim(),
+                description: roleDesc.trim(),
+                domains,
+                aliases
+            };
 
-            setToast({
-                show: true,
-                message: "Role created successfully and available for interviews!",
-                type: "success"
-            });
+            const targetId = editingRole._id || editingRole.id;
+            const res = await api.put(`/roles/${targetId}`, payload);
+            const updated = res.data.role;
 
-            setForm({
-                title: "",
-                description: ""
-            });
-            setShowCreateModal(false);
-            fetchRoles();
+            setSaveToast(`Role "${roleTitle}" updated and persisted successfully.`);
+            setRolesList(prev => prev.map(r => (r.id === editingRole.id ? {
+                ...r,
+                title: updated.title,
+                description: updated.description,
+                domains: updated.domains,
+                aliases: updated.aliases
+            } : r)));
+            setEditingRole(prev => ({
+                ...prev,
+                title: updated.title,
+                description: updated.description,
+                domains: updated.domains,
+                aliases: updated.aliases
+            }));
         } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || "Failed to create role",
-                type: "error"
-            });
+            console.error("Failed to update role:", err);
+            setErrorToast(err.response?.data?.message || "Failed to save role changes.");
         } finally {
-            setSubmitting(false);
+            setSaving(false);
+            setTimeout(() => setSaveToast(""), 4000);
+        }
+    };
+
+    const handleCreateRoleSubmit = async (e) => {
+        e.preventDefault();
+        if (!newTitle.trim()) return;
+
+        setCreatingRole(true);
+        setErrorToast("");
+        setSaveToast("");
+
+        try {
+            const initialDomains = newDomainInput
+                ? newDomainInput.split(",").map(d => d.trim()).filter(Boolean)
+                : ["General"];
+
+            const payload = {
+                title: newTitle.trim(),
+                description: newDesc.trim() || `${newTitle.trim()} engineering role track`,
+                domains: initialDomains,
+                aliases: [newTitle.trim().toLowerCase()]
+            };
+
+            const res = await api.post("/roles", payload);
+            const created = res.data.role;
+            const newR = {
+                id: created._id,
+                _id: created._id,
+                title: created.title,
+                description: created.description,
+                domains: created.domains || ["General"],
+                aliases: created.aliases || [],
+                questions: 0,
+                status: "Active"
+            };
+
+            setRolesList([newR, ...rolesList]);
+            selectRole(newR);
+            setNewRoleModalOpen(false);
+            setNewTitle("");
+            setNewDesc("");
+            setNewDomainInput("");
+            setSaveToast(`New role "${created.title}" registered successfully.`);
+        } catch (err) {
+            console.error("Failed to create role:", err);
+            setErrorToast(err.response?.data?.message || "Failed to create role.");
+        } finally {
+            setCreatingRole(false);
+            setTimeout(() => setSaveToast(""), 4000);
+        }
+    };
+
+    const handleDeleteRole = async () => {
+        if (!editingRole) return;
+        if (!window.confirm(`Are you sure you want to delete role "${editingRole.title}"?`)) {
+            return;
+        }
+
+        try {
+            const targetId = editingRole._id || editingRole.id;
+            await api.delete(`/roles/${targetId}`);
+            setSaveToast(`Role "${editingRole.title}" deleted successfully.`);
+            const remaining = rolesList.filter(r => r.id !== editingRole.id);
+            setRolesList(remaining);
+            if (remaining.length > 0) {
+                selectRole(remaining[0]);
+            } else {
+                setEditingRole(null);
+            }
+        } catch (err) {
+            console.error("Failed to delete role:", err);
+            setErrorToast(err.response?.data?.message || "Failed to delete role.");
+        } finally {
+            setTimeout(() => setSaveToast(""), 4000);
         }
     };
 
     return (
-        <div className="min-vh-100 tech-grid-bg py-5">
-            {toast.show && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={() => setToast({ ...toast, show: false })}
-                />
+        <div>
+            {/* Breadcrumb */}
+            <div className="wf-breadcrumb">
+                <span>Admin</span>
+                <span>·</span>
+                <span style={{ color: "#111827", fontWeight: "600" }}>Roles</span>
+            </div>
+
+            {/* Header + Add Role action */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+                <div>
+                    <h1 className="wf-page-title" style={{ margin: "0 0 6px 0" }}>
+                        Role tracks & competency mapping
+                    </h1>
+                    <p className="wf-page-subtitle" style={{ margin: 0 }}>
+                        Manage engineering disciplines, associated curricula domains, and automated taxonomy aliases.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setNewRoleModalOpen(true)}
+                    className="wf-btn-primary"
+                >
+                    + Add role
+                </button>
+            </div>
+
+            {saveToast && (
+                <div style={{ padding: "12px 18px", backgroundColor: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", color: "#065f46", fontSize: "13px", fontWeight: "600", marginBottom: "20px" }}>
+                    ✓ {saveToast}
+                </div>
             )}
 
-            <div className="container">
-                {/* Header */}
-                <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-5">
-                    <div>
-                        <div className="d-flex align-items-center gap-2 mb-1">
-                            <span className="badge-tech badge-indigo">
-                                <BriefcaseIcon size={14} /> Position Architecture
-                            </span>
-                            <span className="text-muted small">{roles.length} Defined Roles</span>
-                        </div>
-                        <h2 className="fw-bold text-white mb-0" style={{ letterSpacing: "-0.02em" }}>
-                            Manage Interview Roles
-                        </h2>
-                        <p className="text-muted small mb-0">
-                            Configure technical job roles and evaluation specifications for candidate assessments
-                        </p>
+            {errorToast && (
+                <div style={{ padding: "12px 18px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600", marginBottom: "20px" }}>
+                    ⚠ {errorToast}
+                </div>
+            )}
+
+            {/* 2-Column Split: Roles List & Role Editor */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.4fr", gap: "28px" }}>
+                {/* Left Card: Roles List */}
+                <div className="wf-card" style={{ padding: "0", overflow: "hidden" }}>
+                    <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6", fontSize: "13px", fontWeight: "700", color: "#111827" }}>
+                        Engineering roles ({rolesList.length})
                     </div>
 
-                    <button
-                        className="btn btn-primary-gradient"
-                        onClick={() => setShowCreateModal(true)}
-                    >
-                        <PlusIcon size={18} /> Create New Role
-                    </button>
+                    <div style={{ maxHeight: "560px", overflowY: "auto" }}>
+                        {loading ? (
+                            <div style={{ padding: "32px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                                Loading roles from database...
+                            </div>
+                        ) : rolesList.length === 0 ? (
+                            <div style={{ padding: "32px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                                No roles defined. Click "+ Add role" to create one.
+                            </div>
+                        ) : (
+                            rolesList.map((r) => {
+                                const isSelected = editingRole && editingRole.id === r.id;
+                                return (
+                                    <div
+                                        key={r.id}
+                                        onClick={() => selectRole(r)}
+                                        style={{
+                                            padding: "16px 20px",
+                                            borderBottom: "1px solid #f3f4f6",
+                                            cursor: "pointer",
+                                            backgroundColor: isSelected ? "#f8fafc" : "#ffffff",
+                                            borderLeft: isSelected ? "4px solid #111827" : "4px solid transparent"
+                                        }}
+                                    >
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px" }}>
+                                            <span style={{ fontSize: "14px", fontWeight: isSelected ? "700" : "600", color: "#111827" }}>
+                                                {r.title}
+                                            </span>
+                                            <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                                                {r.questions} questions
+                                            </span>
+                                        </div>
+                                        <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>
+                                            {r.domains.slice(0, 3).join(" · ")}
+                                            {r.domains.length > 3 ? ` +${r.domains.length - 3} more` : ""}
+                                        </div>
+                                        <div style={{ display: "flex", gap: "6px" }}>
+                                            <span className="wf-pill wf-pill-green" style={{ fontSize: "11px", padding: "1px 8px" }}>
+                                                {r.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
                 </div>
 
-                {/* Roles Grid */}
-                {loading ? (
-                    <div className="text-center py-5">
-                        <div className="spinner-border text-primary" role="status">
-                            <span className="visually-hidden">Loading roles...</span>
-                        </div>
-                        <p className="text-muted mt-3 small">Loading active roles...</p>
-                    </div>
-                ) : roles.length === 0 ? (
-                    <div className="glass-card p-5 text-center">
-                        <BriefcaseIcon size={44} className="text-muted mb-3" />
-                        <h4 className="fw-bold text-white mb-2">No Interview Roles Defined</h4>
-                        <p className="text-muted small mb-4">
-                            Create your first technical interview role to begin generating candidate questions.
-                        </p>
-                        <button
-                            className="btn btn-primary-gradient"
-                            onClick={() => setShowCreateModal(true)}
-                        >
-                            <PlusIcon size={16} /> Define Role
-                        </button>
-                    </div>
-                ) : (
-                    <div className="row g-4">
-                        {roles.map((role) => (
-                            <div key={role._id} className="col-md-6 col-lg-4">
-                                <div className="glass-card glass-card-interactive p-4 h-100 d-flex flex-column justify-content-between">
-                                    <div>
-                                        <div className="d-flex justify-content-between align-items-center mb-3">
-                                            <span className="badge-tech badge-approved">
-                                                Active Role
-                                            </span>
-                                            <span className="text-muted small d-flex align-items-center gap-1">
-                                                <SparklesIcon size={12} /> AI Evaluated
-                                            </span>
-                                        </div>
-
-                                        <h4 className="fw-bold text-white mb-2">{role.title}</h4>
-
-                                        <p className="text-muted small mb-4" style={{ minHeight: "44px" }}>
-                                            {role.description || "Comprehensive technical assessment covering core concepts, real-world patterns, and system problem solving."}
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <hr style={{ borderColor: "var(--border-subtle)" }} className="my-3" />
-                                        <div className="d-flex justify-content-between align-items-center">
-                                            <span className="text-secondary small fw-semibold">
-                                                Ready for testing
-                                            </span>
-                                            <button
-                                                className="btn btn-sm btn-secondary-dark d-flex align-items-center gap-1"
-                                                onClick={() => navigate("/dashboard")}
-                                                title="View as Candidate"
-                                            >
-                                                <span>Preview</span>
-                                                <ArrowRightIcon size={14} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Create Role Modal */}
-                {showCreateModal && (
-                    <div className="modal-backdrop-custom">
-                        <div className="modal-content-custom p-4 p-md-5" style={{ maxWidth: "560px" }}>
-                            <div className="d-flex justify-content-between align-items-center mb-4">
-                                <div>
-                                    <h4 className="fw-bold text-white mb-0">Create New Interview Role</h4>
-                                    <span className="text-muted small">Define job profile for assessments</span>
-                                </div>
+                {/* Right Card: Role Details & Competency Editor */}
+                <div className="wf-card">
+                    {editingRole ? (
+                        <>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                                <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                                    Edit role: {editingRole.title}
+                                </h2>
                                 <button
-                                    className="btn-close btn-close-white"
-                                    onClick={() => setShowCreateModal(false)}
-                                    disabled={submitting}
-                                />
+                                    type="button"
+                                    onClick={handleDeleteRole}
+                                    style={{
+                                        border: "none",
+                                        backgroundColor: "transparent",
+                                        color: "#dc2626",
+                                        fontSize: "12px",
+                                        cursor: "pointer",
+                                        fontWeight: "600"
+                                    }}
+                                >
+                                    Delete role
+                                </button>
                             </div>
 
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-3">
-                                    <label className="form-label text-secondary small fw-semibold">
-                                        Role Title
-                                    </label>
+                            <form onSubmit={handleSave}>
+                                <div style={{ marginBottom: "16px" }}>
+                                    <label className="wf-form-label">Role title</label>
                                     <input
                                         type="text"
-                                        className="form-control form-control-custom"
-                                        name="title"
-                                        value={form.title}
-                                        onChange={handleChange}
-                                        placeholder="e.g. Full Stack Developer, DevOps Engineer"
+                                        value={roleTitle}
+                                        onChange={(e) => setRoleTitle(e.target.value)}
                                         required
+                                        className="wf-input"
                                     />
                                 </div>
 
-                                <div className="mb-4">
-                                    <label className="form-label text-secondary small fw-semibold">
-                                        Role Description & Scope
-                                    </label>
+                                <div style={{ marginBottom: "20px" }}>
+                                    <label className="wf-form-label">Description & interview scope</label>
                                     <textarea
-                                        className="form-control form-control-custom"
-                                        rows="4"
-                                        name="description"
-                                        value={form.description}
-                                        onChange={handleChange}
-                                        placeholder="Describe the responsibilities, expected seniorities, and focus areas..."
+                                        value={roleDesc}
+                                        onChange={(e) => setRoleDesc(e.target.value)}
+                                        className="wf-textarea"
+                                        style={{ minHeight: "80px" }}
                                     />
                                 </div>
 
-                                <div className="d-flex gap-3">
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary-dark flex-grow-1"
-                                        onClick={() => setShowCreateModal(false)}
-                                        disabled={submitting}
-                                    >
-                                        Cancel
-                                    </button>
+                                {/* Domains under this role */}
+                                <div style={{ marginBottom: "20px" }}>
+                                    <label className="wf-form-label">Curriculum domains under this role</label>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                                        {domains.map((dom) => (
+                                            <span
+                                                key={dom}
+                                                className="wf-pill wf-pill-gray"
+                                                style={{ padding: "4px 12px", fontSize: "13px" }}
+                                            >
+                                                {dom}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeDomain(dom)}
+                                                    style={{ border: "none", background: "transparent", color: "#6b7280", marginLeft: "6px", cursor: "pointer" }}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </span>
+                                        ))}
+                                        <button
+                                            type="button"
+                                            onClick={addDomain}
+                                            className="wf-btn-outline"
+                                            style={{ padding: "4px 10px", fontSize: "12px" }}
+                                        >
+                                            + Add domain
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Aliases */}
+                                <div style={{ marginBottom: "24px" }}>
+                                    <label className="wf-form-label">Aliases (used for auto-categorization & import)</label>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                                        {aliases.map((alias) => (
+                                            <span
+                                                key={alias}
+                                                className="wf-pill wf-pill-blue"
+                                                style={{ padding: "4px 12px", fontSize: "13px" }}
+                                            >
+                                                {alias}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeAlias(alias)}
+                                                    style={{ border: "none", background: "transparent", color: "#2563eb", marginLeft: "6px", cursor: "pointer" }}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </span>
+                                        ))}
+                                        <button
+                                            type="button"
+                                            onClick={addAlias}
+                                            className="wf-btn-outline"
+                                            style={{ padding: "4px 10px", fontSize: "12px" }}
+                                        >
+                                            + Add alias
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: "flex", gap: "10px" }}>
                                     <button
                                         type="submit"
-                                        className="btn btn-primary-gradient flex-grow-1"
-                                        disabled={submitting}
+                                        disabled={saving}
+                                        className="wf-btn-green"
+                                        style={{ cursor: saving ? "not-allowed" : "pointer" }}
                                     >
-                                        {submitting ? "Creating..." : "Create Role"}
+                                        {saving ? "Saving..." : "Save changes"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => selectRole(editingRole)}
+                                        className="wf-btn-outline"
+                                    >
+                                        Reset
                                     </button>
                                 </div>
                             </form>
+                        </>
+                    ) : (
+                        <div style={{ padding: "32px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                            Select a role from the left list to review or modify competencies.
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
+
+            {/* Modal: Add New Role */}
+            {newRoleModalOpen && (
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 9999,
+                    padding: "20px"
+                }}>
+                    <div className="wf-card" style={{ maxWidth: "480px", width: "100%", padding: "24px" }}>
+                        <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
+                            Add Engineering Role Track
+                        </h2>
+                        <p style={{ fontSize: "13px", color: "#6b7280", marginBottom: "20px" }}>
+                            Register a new technical track into the system question taxonomy.
+                        </p>
+
+                        <form onSubmit={handleCreateRoleSubmit}>
+                            <div style={{ marginBottom: "16px" }}>
+                                <label className="wf-form-label">Role Title</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Mobile Developer (iOS/Android)"
+                                    value={newTitle}
+                                    onChange={(e) => setNewTitle(e.target.value)}
+                                    required
+                                    className="wf-input"
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: "16px" }}>
+                                <label className="wf-form-label">Description</label>
+                                <textarea
+                                    placeholder="Brief summary of core technical responsibilities"
+                                    value={newDesc}
+                                    onChange={(e) => setNewDesc(e.target.value)}
+                                    className="wf-textarea"
+                                    style={{ minHeight: "70px" }}
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: "24px" }}>
+                                <label className="wf-form-label">Initial Curriculum Domains (comma separated)</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Swift, Kotlin, Jetpack Compose, Core Animation"
+                                    value={newDomainInput}
+                                    onChange={(e) => setNewDomainInput(e.target.value)}
+                                    className="wf-input"
+                                />
+                            </div>
+
+                            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setNewRoleModalOpen(false)}
+                                    disabled={creatingRole}
+                                    className="wf-btn-outline"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={creatingRole}
+                                    className="wf-btn-primary"
+                                    style={{ cursor: creatingRole ? "not-allowed" : "pointer" }}
+                                >
+                                    {creatingRole ? "Creating..." : "Create Role"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
-
-export default Roles;
