@@ -1,283 +1,334 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import api from "../services/api";
-import {
-    BrainIcon,
-    SparklesIcon,
-    BookOpenIcon,
-    BriefcaseIcon,
-    UserIcon,
-    FileTextIcon,
-    BarChartIcon,
-    ArrowRightIcon,
-    CheckCircleIcon,
-    AlertTriangleIcon,
-    PlusIcon,
-    ClockIcon,
-    ShieldIcon
-} from "../components/icons";
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import api from "../utils/api";
 
-function AdminDashboard() {
+export default function AdminDashboard() {
+    const navigate = useNavigate();
     const [stats, setStats] = useState({
         totalQuestions: 0,
-        pendingQuestions: 0,
-        totalCandidates: 0,
-        totalInterviews: 0,
-        averageScore: 0,
-        totalRoles: 0
+        pendingApproval: 0,
+        candidatesCount: 0,
+        examsEvaluated: 0,
+        avgScore: 0,
+        flaggedIntegrityCount: 0,
+        weeklyVolume: [],
+        lowInventoryRoles: []
     });
     const [loading, setLoading] = useState(true);
-    const navigate = useNavigate();
+    const [error, setError] = useState("");
 
     useEffect(() => {
-        const fetchAdminStats = async () => {
+        const fetchDashboardData = async () => {
             try {
                 setLoading(true);
-                // Fetch questions
-                let questions = [];
-                try {
-                    const qRes = await api.get("/question");
-                    questions = qRes.data || [];
-                } catch (e) {
-                    console.log("Error loading questions", e);
+                setError("");
+
+                const [analyticsRes, summaryRes, candidatesRes] = await Promise.allSettled([
+                    api.get("/results/analytics"),
+                    api.get("/question/folders/summary"),
+                    api.get("/auth/candidates")
+                ]);
+
+                let totalQuestions = 0;
+                let pendingApproval = 0;
+                if (summaryRes.status === "fulfilled" && summaryRes.value?.data) {
+                    const data = summaryRes.value.data;
+                    totalQuestions = data.totalGlobalQuestions || 0;
+                    if (Array.isArray(data.folders)) {
+                        pendingApproval = data.folders.reduce((acc, f) => acc + (f.pendingCount || 0), 0);
+                    }
                 }
 
-                // Fetch results analytics
-                let totalInterviews = 0;
-                let averageScore = 0;
-                try {
-                    const aRes = await api.get("/results/analytics");
-                    totalInterviews = aRes.data.totalResults || 0;
-                    averageScore = aRes.data.averageScore || 0;
-                } catch (e) {
-                    console.log("Error loading analytics", e);
-                }
-
-                // Fetch roles
-                let roles = [];
-                try {
-                    const rRes = await api.get("/roles");
-                    roles = rRes.data.roles || rRes.data || [];
-                } catch (e) {
-                    console.log("Error loading roles", e);
-                }
-
-                // Fetch candidates
                 let candidatesCount = 0;
-                try {
-                    const cRes = await api.get("/results/admin");
-                    const uniqueCandidates = new Set(
-                        (cRes.data.results || [])
-                            .filter((r) => r.candidateId)
-                            .map((r) => r.candidateId._id || r.candidateId)
-                    );
-                    candidatesCount = uniqueCandidates.size;
-                } catch (e) {
-                    console.log("Error loading candidates", e);
+                if (candidatesRes.status === "fulfilled" && candidatesRes.value?.data) {
+                    candidatesCount = candidatesRes.value.data.candidates?.length || 0;
                 }
 
-                const pending = questions.filter((q) => q.status === "pending").length;
+                let examsEvaluated = 0;
+                let avgScore = 0;
+                let flaggedIntegrityCount = 0;
+                let weeklyVolume = [];
+                let lowInventoryRoles = [];
+
+                if (analyticsRes.status === "fulfilled" && analyticsRes.value?.data) {
+                    const aData = analyticsRes.value.data;
+                    examsEvaluated = aData.totalResults || 0;
+                    avgScore = aData.averageScore || 0;
+                    flaggedIntegrityCount = aData.flaggedIntegrityCount || 0;
+                    weeklyVolume = aData.weeklyVolume || [];
+                    lowInventoryRoles = aData.lowInventoryRoles || [];
+                }
 
                 setStats({
-                    totalQuestions: questions.length,
-                    pendingQuestions: pending,
-                    totalCandidates: candidatesCount,
-                    totalInterviews,
-                    averageScore,
-                    totalRoles: roles.length
+                    totalQuestions,
+                    pendingApproval,
+                    candidatesCount,
+                    examsEvaluated,
+                    avgScore,
+                    flaggedIntegrityCount,
+                    weeklyVolume,
+                    lowInventoryRoles
                 });
             } catch (err) {
-                console.log(err);
+                console.error("Failed to load admin overview stats:", err);
+                setError("Failed to synchronize dashboard metrics from server.");
             } finally {
                 setLoading(false);
             }
         };
-
-        fetchAdminStats();
+        fetchDashboardData();
     }, []);
 
-    const adminModules = [
-        {
-            title: "Question Bank",
-            desc: "Create, edit, approve, reject and manage technical interview questions.",
-            path: "/questionbank",
-            icon: <BookOpenIcon size={24} className="text-indigo-400" />,
-            count: `${stats.totalQuestions} Questions`,
-            badge: stats.pendingQuestions > 0 ? `${stats.pendingQuestions} Pending Review` : null,
-            badgeType: "badge-pending"
-        },
-        {
-            title: "AI Question Generator",
-            desc: "Generate tailored interview questions with external AI by role, topic, and difficulty.",
-            path: "/aigenerator",
-            icon: <SparklesIcon size={24} className="text-cyan-400" />,
-            count: "FastAPI AI Engine",
-            badge: "Instant Generation",
-            badgeType: "badge-cyan"
-        },
-        {
-            title: "Manage Roles",
-            desc: "Configure target engineering roles, domain specializations, and assessment parameters.",
-            path: "/roles",
-            icon: <BriefcaseIcon size={24} className="text-emerald-400" />,
-            count: `${stats.totalRoles} Active Roles`,
-            badge: null
-        },
-        {
-            title: "Candidates Directory",
-            desc: "Inspect candidate profiles, total assessments taken, and historical scores.",
-            path: "/candidate-data",
-            icon: <UserIcon size={24} className="text-amber-400" />,
-            count: `${stats.totalCandidates} Candidates`,
-            badge: null
-        },
-        {
-            title: "Interview Submissions",
-            desc: "View completed interviews with granular answers, AI scores, and feedback logs.",
-            path: "/admin-results",
-            icon: <FileTextIcon size={24} className="text-rose-400" />,
-            count: `${stats.totalInterviews} Submissions`,
-            badge: null
-        },
-        {
-            title: "Platform Analytics",
-            desc: "Platform-wide performance statistics, candidate score distributions, and domain metrics.",
-            path: "/admin-analytics",
-            icon: <BarChartIcon size={24} className="text-indigo-400" />,
-            count: `Avg: ${stats.averageScore}/10`,
-            badge: null
-        }
-    ];
+    const totalWeeklyAttempts = stats.weeklyVolume.reduce((acc, v) => acc + (v.count || 0), 0);
 
     return (
-        <div className="min-vh-100 tech-grid-bg py-5">
-            <div className="container">
-                {/* Header */}
-                <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-5">
-                    <div>
-                        <div className="d-flex align-items-center gap-2 mb-1">
-                            <span className="badge-tech badge-pending">
-                                <ShieldIcon size={14} /> Administration Suite
-                            </span>
+        <div>
+            {/* Breadcrumb */}
+            <div className="wf-breadcrumb">
+                <span>Admin</span>
+                <span>·</span>
+                <span style={{ color: "#111827", fontWeight: "600" }}>Overview</span>
+            </div>
+
+            {/* Header */}
+            <div style={{ marginBottom: "28px" }}>
+                <h1 className="wf-page-title">Platform overview</h1>
+                <p className="wf-page-subtitle">
+                    Live platform health, question bank readiness, and candidate evaluation throughput.
+                </p>
+            </div>
+
+            {error && (
+                <div style={{ padding: "12px 18px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600", marginBottom: "20px" }}>
+                    ⚠ {error}
+                </div>
+            )}
+
+            {/* 4 KPI Cards */}
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                    gap: "20px",
+                    marginBottom: "28px"
+                }}
+            >
+                {/* KPI 1: Questions */}
+                <div className="wf-card" style={{ padding: "20px 24px" }}>
+                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
+                        Total questions
+                    </div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#111827", lineHeight: 1, marginBottom: "8px" }}>
+                        {loading ? "..." : stats.totalQuestions}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#10b981", fontWeight: "600" }}>
+                        Active in Question Bank
+                    </div>
+                </div>
+
+                {/* KPI 2: Pending Approval */}
+                <div className="wf-card" style={{ padding: "20px 24px" }}>
+                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
+                        Pending approval
+                    </div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: stats.pendingApproval > 0 ? "#d97706" : "#111827", lineHeight: 1, marginBottom: "8px" }}>
+                        {loading ? "..." : stats.pendingApproval}
+                    </div>
+                    {stats.pendingApproval > 0 ? (
+                        <Link
+                            to="/questionbank"
+                            style={{ fontSize: "12px", color: "#2563eb", textDecoration: "none", fontWeight: "600" }}
+                        >
+                            Review now →
+                        </Link>
+                    ) : (
+                        <div style={{ fontSize: "12px", color: "#059669", fontWeight: "600" }}>
+                            All questions validated
                         </div>
-                        <h2 className="fw-bold text-white mb-0" style={{ letterSpacing: "-0.02em" }}>
-                            Admin Operations Control
+                    )}
+                </div>
+
+                {/* KPI 3: Candidates */}
+                <div className="wf-card" style={{ padding: "20px 24px" }}>
+                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
+                        Active candidates
+                    </div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#111827", lineHeight: 1, marginBottom: "8px" }}>
+                        {loading ? "..." : stats.candidatesCount}
+                    </div>
+                    <Link
+                        to="/candidate-data"
+                        style={{ fontSize: "12px", color: "#2563eb", textDecoration: "none", fontWeight: "600" }}
+                    >
+                        View candidates roster →
+                    </Link>
+                </div>
+
+                {/* KPI 4: Exams Evaluated */}
+                <div className="wf-card" style={{ padding: "20px 24px" }}>
+                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
+                        Exams evaluated
+                    </div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#111827", lineHeight: 1, marginBottom: "8px" }}>
+                        {loading ? "..." : stats.examsEvaluated}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                        Avg score: <strong style={{ color: "#111827" }}>{loading ? "..." : stats.avgScore}</strong> / 10
+                    </div>
+                </div>
+            </div>
+
+            {/* Split Section: Weekly volume + Needs attention */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" }}>
+                {/* Left Card: Weekly volume bar chart */}
+                <div className="wf-card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "20px" }}>
+                        <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                            Weekly evaluation volume
                         </h2>
-                        <p className="text-muted small mb-0">
-                            Orchestrate question generation, candidate evaluations, role definitions, and analytics
-                        </p>
+                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                            {loading ? "Loading..." : `${totalWeeklyAttempts} completions in 8 weeks`}
+                        </span>
                     </div>
 
-                    <div className="d-flex gap-2">
-                        <Link to="/aigenerator" className="btn btn-primary-gradient">
-                            <SparklesIcon size={16} /> Generate Questions
-                        </Link>
-                        <Link to="/dashboard" className="btn btn-secondary-dark">
-                            <BrainIcon size={16} /> Test Candidate Flow
-                        </Link>
-                    </div>
-                </div>
-
-                {/* KPI Metrics Row */}
-                <div className="row g-3 mb-5">
-                    <div className="col-sm-6 col-lg-3">
-                        <div className="glass-card p-3 p-md-4 h-100">
-                            <span className="text-muted small fw-semibold text-uppercase d-block mb-1">
-                                Question Bank
-                            </span>
-                            <div className="d-flex align-items-baseline gap-2">
-                                <h2 className="fw-bold text-white mb-0">{stats.totalQuestions}</h2>
-                                {stats.pendingQuestions > 0 && (
-                                    <span className="badge-tech badge-pending small">
-                                        {stats.pendingQuestions} pending
+                    {/* Bar visualization */}
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "flex-end",
+                            gap: "12px",
+                            height: "170px",
+                            padding: "10px 0 20px 0",
+                            borderBottom: "1px solid #f3f4f6",
+                            marginBottom: "12px"
+                        }}
+                    >
+                        {loading ? (
+                            <div style={{ width: "100%", textAlign: "center", color: "#6b7280", fontSize: "13px", alignSelf: "center" }}>
+                                Loading historical throughput...
+                            </div>
+                        ) : stats.weeklyVolume.length === 0 ? (
+                            <div style={{ width: "100%", textAlign: "center", color: "#6b7280", fontSize: "13px", alignSelf: "center" }}>
+                                No completed evaluations recorded yet.
+                            </div>
+                        ) : (
+                            stats.weeklyVolume.map((bar, idx) => (
+                                <div
+                                    key={idx}
+                                    style={{
+                                        flex: 1,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "center",
+                                        gap: "6px"
+                                    }}
+                                    title={`${bar.week}: ${bar.count} attempts completed`}
+                                >
+                                    <div
+                                        style={{
+                                            width: "100%",
+                                            height: `${bar.height}px`,
+                                            backgroundColor: bar.count > 0 ? "#16a34a" : "#e5e7eb",
+                                            borderRadius: "4px",
+                                            transition: "height 0.3s ease"
+                                        }}
+                                    />
+                                    <span style={{ fontSize: "11px", color: "#6b7280", fontWeight: "500" }}>
+                                        {bar.week}
                                     </span>
-                                )}
-                            </div>
-                            <span className="text-muted small">Approved & pending items</span>
-                        </div>
+                                </div>
+                            ))
+                        )}
                     </div>
 
-                    <div className="col-sm-6 col-lg-3">
-                        <div className="glass-card p-3 p-md-4 h-100">
-                            <span className="text-muted small fw-semibold text-uppercase d-block mb-1">
-                                Total Candidates
-                            </span>
-                            <h2 className="fw-bold text-white mb-0">{stats.totalCandidates}</h2>
-                            <span className="text-muted small">Registered assessment takers</span>
-                        </div>
-                    </div>
-
-                    <div className="col-sm-6 col-lg-3">
-                        <div className="glass-card p-3 p-md-4 h-100">
-                            <span className="text-muted small fw-semibold text-uppercase d-block mb-1">
-                                Interviews Completed
-                            </span>
-                            <h2 className="fw-bold text-white mb-0">{stats.totalInterviews}</h2>
-                            <span className="text-muted small">Submitted and AI scored</span>
-                        </div>
-                    </div>
-
-                    <div className="col-sm-6 col-lg-3">
-                        <div className="glass-card p-3 p-md-4 h-100">
-                            <span className="text-muted small fw-semibold text-uppercase d-block mb-1">
-                                Platform Avg Score
-                            </span>
-                            <h2 className="fw-bold text-white mb-0">
-                                {stats.averageScore} <small className="text-muted fs-6">/ 10</small>
-                            </h2>
-                            <span className="text-muted small">Multi-factor benchmark</span>
-                        </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#6b7280" }}>
+                        <span>8-week longitudinal trend</span>
+                        <span>Height proportional to volume</span>
                     </div>
                 </div>
 
-                {/* Management Modules Grid */}
-                <div className="mb-4">
-                    <h4 className="fw-bold text-white mb-3">Management Modules</h4>
-                    <div className="row g-4">
-                        {adminModules.map((mod) => (
-                            <div key={mod.title} className="col-md-6 col-lg-4">
-                                <div className="glass-card glass-card-interactive p-4 h-100 d-flex flex-column justify-content-between">
-                                    <div>
-                                        <div className="d-flex justify-content-between align-items-center mb-3">
-                                            <div
-                                                className="p-3 rounded-3"
-                                                style={{ background: "rgba(255, 255, 255, 0.04)", border: "1px solid var(--border-subtle)" }}
-                                            >
-                                                {mod.icon}
-                                            </div>
-                                            {mod.badge && (
-                                                <span className={`badge-tech ${mod.badgeType}`}>
-                                                    {mod.badge}
-                                                </span>
-                                            )}
-                                        </div>
+                {/* Right Card: Needs attention */}
+                <div className="wf-card">
+                    <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 20px 0" }}>
+                        Needs attention
+                    </h2>
 
-                                        <h5 className="fw-bold text-white mb-2">{mod.title}</h5>
-                                        <p className="text-muted small mb-4" style={{ minHeight: "42px" }}>
-                                            {mod.desc}
-                                        </p>
-                                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                        {/* Item 1: Pending questions */}
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                paddingBottom: "14px",
+                                borderBottom: "1px solid #f3f4f6"
+                            }}
+                        >
+                            <span style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>
+                                {stats.pendingApproval > 0
+                                    ? `${stats.pendingApproval} questions waiting for approval`
+                                    : "All questions in bank validated"}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/questionbank")}
+                                className="wf-btn-outline"
+                                style={{ padding: "5px 14px", fontSize: "12px", cursor: "pointer" }}
+                            >
+                                {stats.pendingApproval > 0 ? "Review" : "Open Bank"}
+                            </button>
+                        </div>
 
-                                    <div>
-                                        <hr style={{ borderColor: "var(--border-subtle)" }} className="my-3" />
-                                        <div className="d-flex justify-content-between align-items-center">
-                                            <span className="text-secondary small fw-semibold">
-                                                {mod.count}
-                                            </span>
-                                            <Link to={mod.path} className="btn btn-sm btn-secondary-dark d-flex align-items-center gap-1">
-                                                <span>Open</span>
-                                                <ArrowRightIcon size={14} />
-                                            </Link>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                        {/* Item 2: Flagged integrity */}
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                paddingBottom: "14px",
+                                borderBottom: "1px solid #f3f4f6"
+                            }}
+                        >
+                            <span style={{ fontSize: "13px", color: stats.flaggedIntegrityCount > 0 ? "#dc2626" : "#374151", fontWeight: "500" }}>
+                                {stats.flaggedIntegrityCount > 0
+                                    ? `${stats.flaggedIntegrityCount} attempts flagged high integrity risk`
+                                    : "Zero anomalous integrity flags"}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/candidate-data")}
+                                className="wf-btn-outline"
+                                style={{ padding: "5px 14px", fontSize: "12px", cursor: "pointer" }}
+                            >
+                                Inspect
+                            </button>
+                        </div>
+
+                        {/* Item 3: Role inventory */}
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between"
+                            }}
+                        >
+                            <span style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>
+                                {stats.lowInventoryRoles.length > 0
+                                    ? `${stats.lowInventoryRoles[0].role} has only ${stats.lowInventoryRoles[0].count} approved questions`
+                                    : "All roles have adequate approved questions"}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/aigenerator")}
+                                className="wf-btn-outline"
+                                style={{ padding: "5px 14px", fontSize: "12px", cursor: "pointer" }}
+                            >
+                                Add
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     );
 }
-
-export default AdminDashboard;
