@@ -1,184 +1,397 @@
-import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import api from "../services/api";
-import {
-    UserIcon,
-    ShieldIcon,
-    TrophyIcon,
-    ClockIcon,
-    BarChartIcon,
-    CheckCircleIcon,
-    LogOutIcon,
-    BrainIcon,
-    ArrowRightIcon
-} from "../components/icons";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../utils/api";
 
-function Profile() {
+export default function Profile() {
     const navigate = useNavigate();
-    const username = localStorage.getItem("username") || "Candidate User";
-    const email = localStorage.getItem("email") || "candidate@example.com";
-    const role = localStorage.getItem("role") || "user";
-
-    const [stats, setStats] = useState({
-        totalInterviews: 0,
-        averageScore: 0,
-        bestScore: 0
-    });
-    const [loading, setLoading] = useState(true);
+    const [fullName, setFullName] = useState(() => localStorage.getItem("username") || "Candidate");
+    const [email, setEmail] = useState(() => localStorage.getItem("email") || "candidate@test.com");
+    const [preferredRole, setPreferredRole] = useState(() => localStorage.getItem("preferredRole") || "Frontend developer");
+    const [savedMessage, setSavedMessage] = useState("");
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        const fetchUserData = async () => {
-            try {
-                const response = await api.get("/results");
-                const results = response.data.results || [];
-                const total = results.length;
-                const avg = total > 0
-                    ? (results.reduce((acc, r) => acc + (r.overallScore || 0), 0) / total).toFixed(1)
-                    : 0;
-                const best = total > 0
-                    ? Math.max(...results.map((r) => r.overallScore || 0)).toFixed(1)
-                    : 0;
-
-                setStats({
-                    totalInterviews: total,
-                    averageScore: avg,
-                    bestScore: best
-                });
-            } catch (err) {
-                console.log(err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchUserData();
+        const storedName = localStorage.getItem("username");
+        const storedEmail = localStorage.getItem("email");
+        const storedRole = localStorage.getItem("preferredRole");
+        if (storedName) setFullName(storedName);
+        if (storedEmail) setEmail(storedEmail);
+        if (storedRole) setPreferredRole(storedRole);
     }, []);
 
-    const logout = () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("role");
-        localStorage.removeItem("username");
-        localStorage.removeItem("email");
+    const getInitials = (name, mail) => {
+        if (name && name.trim()) {
+            const parts = name.trim().split(/\s+/);
+            if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+            return parts[0].slice(0, 2).toUpperCase();
+        }
+        if (mail) return mail.slice(0, 2).toUpperCase();
+        return "AM";
+    };
+
+    const handleSavePersonal = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+            await api.put("/auth/profile", { username: fullName });
+            localStorage.setItem("username", fullName);
+            setSavedMessage("Personal details saved successfully.");
+        } catch (err) {
+            localStorage.setItem("username", fullName);
+            setSavedMessage("Personal details saved locally.");
+        } finally {
+            setSaving(false);
+            setTimeout(() => setSavedMessage(""), 3000);
+        }
+    };
+
+    const handleSavePreference = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+            await api.put("/auth/profile", { preferredRole });
+            localStorage.setItem("preferredRole", preferredRole);
+            setSavedMessage("Practice preference updated.");
+        } catch (err) {
+            localStorage.setItem("preferredRole", preferredRole);
+            setSavedMessage("Practice preference saved locally.");
+        } finally {
+            setSaving(false);
+            setTimeout(() => setSavedMessage(""), 3000);
+        }
+    };
+
+    const handleSignOut = () => {
+        localStorage.clear();
         navigate("/login");
     };
 
     return (
-        <div className="min-vh-100 tech-grid-bg py-5">
-            <div className="container" style={{ maxWidth: "880px" }}>
-                {/* Header */}
-                <div className="mb-4">
-                    <span className="badge-tech badge-indigo mb-2">Account Center</span>
-                    <h2 className="fw-bold text-white mb-1" style={{ letterSpacing: "-0.02em" }}>
-                        Candidate Profile
-                    </h2>
-                    <p className="text-muted small">
-                        Manage your platform credentials, role privileges, and evaluation summary
-                    </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+            {/* Header */}
+            <div>
+                <div style={{
+                    fontSize: "11px",
+                    fontWeight: "700",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "#64748b",
+                    marginBottom: "6px"
+                }}>
+                    10 / ACCOUNT
                 </div>
+                <h1 style={{
+                    fontSize: "28px",
+                    fontWeight: "800",
+                    color: "#0f172a",
+                    letterSpacing: "-0.03em",
+                    margin: "0 0 6px 0"
+                }}>
+                    Your profile, kept simple.
+                </h1>
+                <p style={{
+                    fontSize: "15px",
+                    color: "#475569",
+                    margin: 0
+                }}>
+                    Keep your account details and preferred practice focus in one place.
+                </p>
+            </div>
 
-                {/* Profile Card */}
-                <div className="glass-card p-4 p-md-5 mb-4">
-                    <div className="d-flex flex-wrap align-items-center justify-content-between gap-4">
-                        <div className="d-flex align-items-center gap-4">
-                            <div
-                                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-lg"
+            {savedMessage && (
+                <div style={{
+                    backgroundColor: "#ecfdf5",
+                    border: "1px solid #a7f3d0",
+                    color: "#065f46",
+                    padding: "10px 16px",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    fontWeight: "600"
+                }}>
+                    ✓ {savedMessage}
+                </div>
+            )}
+
+            {/* Split Layout */}
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "1.5fr 1fr",
+                gap: "24px"
+            }}>
+                {/* Left Column: Personal details & Preferences */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                    {/* Personal Details Card */}
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "14px",
+                        padding: "28px"
+                    }}>
+                        <h2 style={{
+                            fontSize: "17px",
+                            fontWeight: "700",
+                            color: "#0f172a",
+                            margin: "0 0 20px 0"
+                        }}>
+                            Personal details
+                        </h2>
+
+                        {/* Avatar & Name Header */}
+                        <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "14px",
+                            marginBottom: "24px",
+                            paddingBottom: "20px",
+                            borderBottom: "1px solid #f1f5f9"
+                        }}>
+                            <div style={{
+                                width: "48px",
+                                height: "48px",
+                                borderRadius: "50%",
+                                backgroundColor: "#e2e8f0",
+                                color: "#334155",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyCenter: "center",
+                                justifyContent: "center",
+                                fontWeight: "700",
+                                fontSize: "16px"
+                            }}>
+                                {getInitials(fullName, email)}
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a" }}>
+                                    {fullName}
+                                </div>
+                                <div style={{ fontSize: "12px", color: "#64748b" }}>
+                                    Candidate account
+                                </div>
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleSavePersonal}>
+                            <div style={{ marginBottom: "16px" }}>
+                                <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
+                                    Full name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={fullName}
+                                    onChange={(e) => setFullName(e.target.value)}
+                                    style={{
+                                        width: "100%",
+                                        padding: "10px 12px",
+                                        borderRadius: "8px",
+                                        border: "1px solid #cbd5e1",
+                                        fontSize: "14px",
+                                        boxSizing: "border-box"
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: "20px" }}>
+                                <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
+                                    Email address
+                                </label>
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    style={{
+                                        width: "100%",
+                                        padding: "10px 12px",
+                                        borderRadius: "8px",
+                                        border: "1px solid #cbd5e1",
+                                        fontSize: "14px",
+                                        boxSizing: "border-box"
+                                    }}
+                                />
+                                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "6px" }}>
+                                    Email changes depend on the existing account verification flow.
+                                </div>
+                            </div>
+
+                            <div style={{ display: "flex", gap: "10px" }}>
+                                <button
+                                    type="submit"
+                                    style={{
+                                        backgroundColor: "#1e3a8a",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        padding: "10px 18px",
+                                        fontSize: "13px",
+                                        fontWeight: "600",
+                                        cursor: "pointer"
+                                    }}
+                                >
+                                    Save changes
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setFullName("Alex Morgan")}
+                                    style={{
+                                        backgroundColor: "#ffffff",
+                                        color: "#334155",
+                                        border: "1px solid #cbd5e1",
+                                        borderRadius: "8px",
+                                        padding: "10px 18px",
+                                        fontSize: "13px",
+                                        fontWeight: "500",
+                                        cursor: "pointer"
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    {/* Practice Preferences Card */}
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "14px",
+                        padding: "28px"
+                    }}>
+                        <h2 style={{
+                            fontSize: "17px",
+                            fontWeight: "700",
+                            color: "#0f172a",
+                            margin: "0 0 16px 0"
+                        }}>
+                            Practice preferences
+                        </h2>
+
+                        <form onSubmit={handleSavePreference}>
+                            <div style={{ marginBottom: "16px" }}>
+                                <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
+                                    Preferred interview role
+                                </label>
+                                <select
+                                    value={preferredRole}
+                                    onChange={(e) => setPreferredRole(e.target.value)}
+                                    style={{
+                                        width: "100%",
+                                        padding: "10px 12px",
+                                        borderRadius: "8px",
+                                        border: "1px solid #cbd5e1",
+                                        fontSize: "14px",
+                                        backgroundColor: "#ffffff",
+                                        boxSizing: "border-box"
+                                    }}
+                                >
+                                    <option>Frontend developer</option>
+                                    <option>Backend developer</option>
+                                    <option>Fullstack engineer</option>
+                                    <option>Data engineer</option>
+                                </select>
+                                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "6px" }}>
+                                    Used as the starting point on Home. You can change it for any attempt.
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
                                 style={{
-                                    width: "72px",
-                                    height: "72px",
-                                    fontSize: "1.8rem",
-                                    background: role === "admin"
-                                        ? "linear-gradient(135deg, #f59e0b, #d97706)"
-                                        : "linear-gradient(135deg, #6366f1, #06b6d4)"
+                                    backgroundColor: "#ffffff",
+                                    color: "#0f172a",
+                                    border: "1px solid #cbd5e1",
+                                    borderRadius: "8px",
+                                    padding: "9px 16px",
+                                    fontSize: "13px",
+                                    fontWeight: "600",
+                                    cursor: "pointer"
                                 }}
                             >
-                                {username.charAt(0).toUpperCase()}
-                            </div>
-
-                            <div>
-                                <div className="d-flex align-items-center gap-2 mb-1">
-                                    <h3 className="fw-bold text-white mb-0">{username}</h3>
-                                    <span className={`badge-tech ${role === "admin" ? "badge-pending" : "badge-indigo"}`}>
-                                        {role === "admin" ? "Administrator" : "Candidate"}
-                                    </span>
-                                </div>
-                                <p className="text-muted small mb-0">{email}</p>
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={logout}
-                            className="btn btn-secondary-dark d-flex align-items-center gap-2"
-                        >
-                            <LogOutIcon size={16} /> Sign Out
-                        </button>
-                    </div>
-
-                    <hr style={{ borderColor: "var(--border-subtle)" }} className="my-4" />
-
-                    {/* Quick Stats Grid */}
-                    <div className="row g-3">
-                        <div className="col-sm-4">
-                            <div className="p-3 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                                <span className="text-muted small d-block mb-1">Interviews Taken</span>
-                                <h4 className="fw-bold text-white mb-0">{stats.totalInterviews}</h4>
-                            </div>
-                        </div>
-
-                        <div className="col-sm-4">
-                            <div className="p-3 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                                <span className="text-muted small d-block mb-1">Mean Score</span>
-                                <h4 className="fw-bold text-white mb-0">{stats.averageScore} / 10</h4>
-                            </div>
-                        </div>
-
-                        <div className="col-sm-4">
-                            <div className="p-3 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                                <span className="text-muted small d-block mb-1">Peak Score</span>
-                                <h4 className="fw-bold text-white mb-0">{stats.bestScore} / 10</h4>
-                            </div>
-                        </div>
+                                Save preference
+                            </button>
+                        </form>
                     </div>
                 </div>
 
-                {/* Candidate Preferences & Security Info */}
-                <div className="row g-4">
-                    <div className="col-md-6">
-                        <div className="glass-card p-4 h-100">
-                            <h5 className="fw-bold text-white mb-3">Interview Specialization</h5>
-                            <div className="d-flex flex-column gap-2 text-muted small">
-                                <div className="d-flex justify-content-between p-2 rounded-2" style={{ background: "rgba(255, 255, 255, 0.02)" }}>
-                                    <span className="text-secondary">Primary Focus:</span>
-                                    <span className="text-white fw-semibold">Full Stack Engineering</span>
-                                </div>
-                                <div className="d-flex justify-content-between p-2 rounded-2" style={{ background: "rgba(255, 255, 255, 0.02)" }}>
-                                    <span className="text-secondary">Key Tech:</span>
-                                    <span className="text-white fw-semibold">React, Node.js, MongoDB</span>
-                                </div>
-                                <div className="d-flex justify-content-between p-2 rounded-2" style={{ background: "rgba(255, 255, 255, 0.02)" }}>
-                                    <span className="text-secondary">Evaluation Status:</span>
-                                    <span className="badge-tech badge-approved">Active & Ready</span>
-                                </div>
+                {/* Right Column: Account Menu & Notes */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    {/* Account Menu Card */}
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "14px",
+                        padding: "20px"
+                    }}>
+                        <div style={{
+                            fontSize: "12px",
+                            fontWeight: "700",
+                            color: "#64748b",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                            marginBottom: "12px"
+                        }}>
+                            Account menu
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "10px 12px",
+                                borderRadius: "8px",
+                                backgroundColor: "#eff6ff",
+                                color: "#2563eb",
+                                fontSize: "13px",
+                                fontWeight: "600"
+                            }}>
+                                <span>Profile & preferences</span>
+                                <span>✓</span>
                             </div>
+
+                            <button
+                                type="button"
+                                onClick={handleSignOut}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    width: "100%",
+                                    padding: "10px 12px",
+                                    borderRadius: "8px",
+                                    border: "none",
+                                    background: "none",
+                                    color: "#64748b",
+                                    fontSize: "13px",
+                                    fontWeight: "500",
+                                    cursor: "pointer",
+                                    textAlign: "left"
+                                }}
+                            >
+                                Sign out
+                            </button>
                         </div>
                     </div>
 
-                    <div className="col-md-6">
-                        <div className="glass-card p-4 h-100 d-flex flex-column justify-content-between">
-                            <div>
-                                <h5 className="fw-bold text-white mb-2">Continue Assessment</h5>
-                                <p className="text-muted small mb-4">
-                                    Take another challenge to continue building your verified skill profile and report.
-                                </p>
-                            </div>
-                            <Link to="/dashboard" className="btn btn-primary-gradient w-100">
-                                <BrainIcon size={16} /> Open Candidate Dashboard <ArrowRightIcon size={16} />
-                            </Link>
+                    {/* Only useful settings notice */}
+                    <div style={{
+                        backgroundColor: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "14px",
+                        padding: "20px",
+                        fontSize: "12px",
+                        lineHeight: "1.5",
+                        color: "#64748b"
+                    }}>
+                        <div style={{ fontWeight: "700", color: "#334155", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>ℹ</span> Only useful settings
                         </div>
+                        <p style={{ margin: "0 0 10px 0" }}>
+                            No dark theme, notification controls or unsupported security settings are promised. Account actions should reuse verified platform behavior.
+                        </p>
+                        <p style={{ margin: 0, fontSize: "11px", color: "#94a3b8" }}>
+                            Home, Practice and My Progress remain the main navigation. Account is a compact secondary menu.
+                        </p>
                     </div>
                 </div>
             </div>
         </div>
     );
 }
-
-export default Profile;

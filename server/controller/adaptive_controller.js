@@ -1,9 +1,15 @@
 const AdaptiveInterview = require("../models/adaptive_interview_schema");
 const Question = require("../models/question_schema");
 const axios = require("axios");
-const { computeAnswerIntegrity } = require("../services/integrity");
+const { computeAnswerIntegrity, evaluateAnswerPlagiarism } = require("../services/integrity");
 const { MAX_INTEGRITY_VIOLATIONS, DEFAULT_DURATION_SECONDS } = require("../config/integrity_config");
 const { generateAndSaveQuestions } = require("../utils/ai_question_generator");
+
+
+function normalizeText(text) {
+    if (!text || typeof text !== "string") return "";
+    return text.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+}
 
 const LEVEL_CONFIG = {
     1: { name: "Beginner", difficulty: "easy", basePoints: 100 },
@@ -45,6 +51,30 @@ function finalizeAdaptiveInterview(interview, autoReason = "") {
     } else {
         interview.masteryBadge = "🌱 Developing Apprentice";
     }
+
+    // Compute adaptive exam Plagiarism Summary
+    let totalPlag = 0;
+    let maxPlag = 0;
+    let flaggedCount = 0;
+    (interview.questionHistory || []).forEach(q => {
+        const pScore = q.plagiarismReport?.plagiarismScore || 0;
+        totalPlag += pScore;
+        if (pScore > maxPlag) maxPlag = pScore;
+        if (q.plagiarismReport?.isPlagiarized) flaggedCount++;
+    });
+    const avgPlag = count > 0 ? Math.round(totalPlag / count) : 0;
+    let pStatus = "Clean";
+    if (avgPlag >= 60 || maxPlag >= 75) pStatus = "Flagged (High Risk)";
+    else if (avgPlag >= 35 || maxPlag >= 50) pStatus = "Suspicious (Moderate)";
+    else if (avgPlag >= 15) pStatus = "Low Risk";
+
+    interview.plagiarismSummary = {
+        overallPlagiarismScore: avgPlag,
+        overallOriginalityScore: 100 - avgPlag,
+        highestQuestionPlagiarism: maxPlag,
+        status: pStatus,
+        flaggedQuestionsCount: flaggedCount
+    };
 
     interview.overallFeedback = `Adaptive exam complete! Final Score: ${interview.overallScore}/10 with ${updatedTotalPoints} total points earned. Rank achieved: ${interview.masteryBadge}.${autoReason ? ` (${autoReason})` : ""}`;
 }
@@ -187,12 +217,19 @@ exports.getNextQuestion = async function(req, res) {
             return res.status(200).json({ message: "Exam limit reached", isFinished: true, interview });
         }
 
-        const askedQuestionIds = interview.questionHistory.map(q => q.questionId);
+        const askedQuestionIds = interview.questionHistory.map(q => q.questionId).filter(Boolean);
+        const askedTexts = new Set(interview.questionHistory.map(q => normalizeText(q.questionText)).filter(Boolean));
+
+        const isUnasked = (candidateQ) => {
+            if (!candidateQ) return false;
+            const norm = normalizeText(candidateQ.questionText);
+            return !askedTexts.has(norm);
+        };
         const targetTopic = interview.currentTopic || interview.domain || "General";
         const topicRegex = new RegExp(targetTopic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i");
         const roleRegex = new RegExp(`^${interview.roleTitle.trim()}$`, "i");
 
-        // 1. Try finding by Role + Target Domain + Current Difficulty
+        // 1. Try finding by Role + Target Domain + Current Adapted Difficulty
         let question = await Question.findOne({
             role: { $regex: roleRegex },
             domain: { $regex: topicRegex },
@@ -201,23 +238,16 @@ exports.getNextQuestion = async function(req, res) {
             _id: { $nin: askedQuestionIds }
         });
 
-        // 2. Try finding by Role + Target Domain (any difficulty)
-        if (!question) {
-            question = await Question.findOne({
-                role: { $regex: roleRegex },
-                domain: { $regex: topicRegex },
-                status: "approved",
-                _id: { $nin: askedQuestionIds }
-            });
-        }
+        if (question && !isUnasked(question)) question = null;
 
-        // 3. Try domain keyword match
+        // 2. Try domain keyword match WITH current adapted difficulty
         if (!question && targetTopic !== "General") {
             const keywords = targetTopic.split(/[\s,&/]+/).filter(w => w.length > 2);
             for (const kw of keywords) {
                 const kwRegex = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i");
                 question = await Question.findOne({
                     role: { $regex: roleRegex },
+                    difficulty: interview.currentDifficulty,
                     $or: [
                         { domain: { $regex: kwRegex } },
                         { questionText: { $regex: kwRegex } }
@@ -225,14 +255,15 @@ exports.getNextQuestion = async function(req, res) {
                     status: "approved",
                     _id: { $nin: askedQuestionIds }
                 });
-                if (question) break;
+                if (question && isUnasked(question)) break;
+                else question = null;
             }
         }
 
-        // 4. ON-DEMAND AI QUESTION GENERATION:
-        // If no matching question exists for this role & tech stack/domain, generate on the fly!
+        // 3. ON-DEMAND AI QUESTION GENERATION at exact adapted difficulty:
+        // When candidate shifts level (e.g. to Hard or Easy), generate questions at that exact tier
         if (!question) {
-            console.log(`[Adaptive Exam] No questions remaining in DB for "${interview.roleTitle} - ${targetTopic}". Generating on-demand with AI...`);
+            console.log(`[Adaptive Exam] No ${interview.currentDifficulty} question in DB for "${interview.roleTitle} - ${targetTopic}". Generating on-demand with AI...`);
             try {
                 const generated = await generateAndSaveQuestions({
                     role: interview.roleTitle,
@@ -242,14 +273,27 @@ exports.getNextQuestion = async function(req, res) {
                     userId: interview.candidateId
                 });
                 if (generated && generated.length > 0) {
-                    question = generated[0];
+                    question = generated.find(g => isUnasked(g)) || generated[0];
                 }
             } catch (genErr) {
                 console.error("[Adaptive Exam] Dynamic question generation error:", genErr.message);
             }
         }
 
-        // 5. Fallback within the same role only
+        if (question && !isUnasked(question)) question = null;
+
+        // 4. Fallback: Role + Target Domain (relaxing difficulty only if on-demand generation failed)
+        if (!question) {
+            question = await Question.findOne({
+                role: { $regex: roleRegex },
+                domain: { $regex: topicRegex },
+                status: "approved",
+                _id: { $nin: askedQuestionIds }
+            });
+            if (question && !isUnasked(question)) question = null;
+        }
+
+        // 5. Final fallback within the same role only
         if (!question) {
             question = await Question.findOne({
                 role: { $regex: roleRegex },
@@ -320,11 +364,17 @@ exports.submitAdaptiveAnswer = async function(req, res) {
         const dbquestion = await Question.findById(questionId);
         if (!dbquestion) return res.status(404).json({ message: "Question not found" });
 
-        // Compute integrity report for this question
+        // Compute integrity and plagiarism reports for this question
         const integrityReport = computeAnswerIntegrity({
             answer: userAnswer || "",
             idealAnswer: dbquestion.idealAnswer || "",
             telemetry: telemetry
+        });
+        const plagiarismReport = evaluateAnswerPlagiarism({
+            answer: userAnswer || "",
+            idealAnswer: dbquestion.idealAnswer || "",
+            telemetry: telemetry,
+            questionType: "theory"
         });
 
         const FASTAPI_URL = process.env.FASTAPI_URL || "http://127.0.0.1:8000";
@@ -400,7 +450,8 @@ exports.submitAdaptiveAnswer = async function(req, res) {
             weakness: evaldata.weakness || "Minor gaps",
             aiFeedback: evaldata.feedback || "Good conceptual engagement.",
             telemetry,
-            integrityReport
+            integrityReport,
+            plagiarismReport
         });
 
         interview.totalPoints = updatedTotalPoints;
@@ -431,7 +482,8 @@ exports.submitAdaptiveAnswer = async function(req, res) {
                 levelShift,
                 oldLevel: currentLevel,
                 newLevel: newLevel,
-                newDifficulty: newDifficulty
+                newDifficulty: newDifficulty,
+                plagiarismReport
             },
             isFinished,
             interview

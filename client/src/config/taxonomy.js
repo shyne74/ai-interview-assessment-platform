@@ -38,6 +38,8 @@ export const ROLE_DOMAINS = {
     "Software Engineer": [
         "Algorithms",
         "Data Structures",
+        "Recursion & Backtracking",
+        "Dynamic Programming",
         "Python",
         "Object-Oriented Design",
         "System Programming"
@@ -151,6 +153,12 @@ const DOMAIN_ALIASES = {
     "algorithms": "Algorithms",
     "algorithms (112)": "Algorithms",
     "data structures": "Data Structures",
+    "recursion": "Recursion & Backtracking",
+    "backtracking": "Recursion & Backtracking",
+    "recursion & backtracking": "Recursion & Backtracking",
+    "recursion and backtracking": "Recursion & Backtracking",
+    "dynamic programming": "Dynamic Programming",
+    "dp": "Dynamic Programming",
     "document analysis": "System Programming",
     "python": "Python",
     "ci/cd": "CI/CD Pipelines",

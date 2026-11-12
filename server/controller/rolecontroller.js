@@ -39,6 +39,7 @@ exports.getroles = async function(req, res) {
                 role: { $regex: new RegExp(`^${r.title}$`, "i") }
             });
             roleObj.questions = qCount;
+            roleObj.questionCount = qCount;
             return roleObj;
         }));
 

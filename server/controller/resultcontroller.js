@@ -183,6 +183,23 @@ exports.getAnalytics = async function(req, res) {
             needsWork: results.filter(r => (r.overallScore || 0) < 5.0).length
         };
 
+        // Calculate pass rate (overallScore >= 7.0)
+        const passedCount = results.filter(r => (r.overallScore || 0) >= 7.0).length;
+        const passRate = totalResults ? Number(((passedCount / totalResults) * 100).toFixed(1)) : 0;
+
+        // Calculate domain averages
+        const domainSums = {};
+        const domainCounts = {};
+        results.forEach(r => {
+            const d = r.domain || r.roleTitle || "General";
+            domainSums[d] = (domainSums[d] || 0) + (r.overallScore || 0);
+            domainCounts[d] = (domainCounts[d] || 0) + 1;
+        });
+        const domainAverages = {};
+        Object.keys(domainCounts).forEach(d => {
+            domainAverages[d] = Number((domainSums[d] / domainCounts[d]).toFixed(1));
+        });
+
         // Find roles with low approved question inventory (< 5)
         const allRoles = await Role.find({});
         const lowInventoryRoles = [];
@@ -198,9 +215,13 @@ exports.getAnalytics = async function(req, res) {
 
         return res.status(200).json({
             totalResults,
+            totalInterviews: totalResults,
             averageScore,
+            integrityFlags: flaggedIntegrityCount,
             flaggedIntegrityCount,
+            passRate,
             weeklyVolume,
+            domainAverages,
             scoreDistribution,
             lowInventoryRoles
         });

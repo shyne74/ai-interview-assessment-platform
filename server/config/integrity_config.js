@@ -1,7 +1,7 @@
 // Configuration constants for Exam Integrity and Proctoring
 module.exports = {
-    // Violation threshold before auto-submitting the exam session
-    MAX_INTEGRITY_VIOLATIONS: parseInt(process.env.MAX_INTEGRITY_VIOLATIONS || "2", 10),
+    // Violation threshold before auto-submitting the exam session (default 3 warnings)
+    MAX_INTEGRITY_VIOLATIONS: parseInt(process.env.MAX_INTEGRITY_VIOLATIONS || "3", 10),
 
     // Heartbeat grace window in seconds (default 45s)
     HEARTBEAT_GRACE_SECONDS: parseInt(process.env.HEARTBEAT_GRACE_SECONDS || "45", 10),

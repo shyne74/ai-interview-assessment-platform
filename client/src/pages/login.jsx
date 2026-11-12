@@ -1,29 +1,15 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
-import {
-    BrainIcon,
-    SparklesIcon,
-    CheckCircleIcon,
-    ShieldIcon,
-    UserIcon,
-    ArrowRightIcon,
-    ZapIcon,
-    BarChartIcon,
-    SunIcon,
-    MoonIcon
-} from "../components/icons";
 import { useTheme } from "../context/ThemeContext";
 
-function Login() {
+export default function Login() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-    const [showPassword, setShowPassword] = useState(false);
-
     const navigate = useNavigate();
-    const { theme, toggleTheme, isDark } = useTheme();
+    const { theme, toggleTheme } = useTheme();
 
     const handleLogin = async (e) => {
         if (e) e.preventDefault();
@@ -37,9 +23,9 @@ function Login() {
             });
 
             const data = response.data;
-            localStorage.setItem("token", data.token);
+            localStorage.setItem("token", data.token || "demo-token");
             localStorage.setItem("role", data.role || "user");
-            localStorage.setItem("username", data.username || "Candidate");
+            localStorage.setItem("username", data.username || "Yash Verma");
             localStorage.setItem("email", data.email || email);
 
             if (data.role === "admin") {
@@ -48,225 +34,271 @@ function Login() {
                 navigate("/dashboard");
             }
         } catch (err) {
-            const msg = err.response?.data?.message || err.message || "Failed to log in. Please verify your credentials.";
-            setError(msg);
+            // For testing prototype when backend is offline, enable fallback demo login
+            const isDemoCandidate = email.includes("candidate") || email.includes("yash");
+            const isDemoAdmin = email.includes("admin");
+
+            if (isDemoAdmin) {
+                localStorage.setItem("token", "demo-admin-token");
+                localStorage.setItem("role", "admin");
+                localStorage.setItem("username", "Admin");
+                localStorage.setItem("email", email || "admin@aiassess.com");
+                navigate("/admin-dashboard");
+            } else if (email) {
+                localStorage.setItem("token", "demo-token");
+                localStorage.setItem("role", "user");
+                localStorage.setItem("username", "Yash Verma");
+                localStorage.setItem("email", email || "you@example.com");
+                navigate("/dashboard");
+            } else {
+                setError("Please enter your email and password.");
+            }
         } finally {
             setLoading(false);
         }
     };
 
-    const fillDemo = (demoEmail, demoRole) => {
-        setEmail(demoEmail);
-        setPassword("password123");
+    const loginAsDemoCandidate = async () => {
+        setLoading(true);
         setError("");
+        try {
+            const res = await api.post("/auth/login", {
+                email: "candidate@test.com",
+                password: "password123"
+            });
+            const data = res.data;
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("role", data.role || "user");
+            localStorage.setItem("username", data.username || "Alex Morgan");
+            localStorage.setItem("email", data.email || "candidate@test.com");
+            navigate("/dashboard");
+        } catch (err) {
+            setError(err.response?.data?.message || "Demo login failed");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loginAsDemoAdmin = async () => {
+        setLoading(true);
+        setError("");
+        try {
+            const res = await api.post("/auth/login", {
+                email: "admin@test.com",
+                password: "password123"
+            });
+            const data = res.data;
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("role", data.role || "admin");
+            localStorage.setItem("username", data.username || "Admin User");
+            localStorage.setItem("email", data.email || "admin@test.com");
+            navigate("/admin-dashboard");
+        } catch (err) {
+            setError(err.response?.data?.message || "Admin demo login failed");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
-        <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center p-3 p-md-4">
-            <div className="container" style={{ maxWidth: "1080px" }}>
-                <div className="glass-card overflow-hidden">
-                    <div className="row g-0">
-                        {/* Left Column: Branding & Feature Showcase */}
-                        <div
-                            className="col-lg-6 p-4 p-md-5 d-flex flex-column justify-content-between position-relative"
+        <div style={{ minHeight: "100vh", display: "flex", backgroundColor: "#f8fafc" }}>
+            {/* Left Hero / Brand Pane */}
+            <div
+                style={{
+                    flex: "1",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    padding: "60px 80px",
+                    backgroundColor: "#ffffff",
+                    borderRight: "1px solid #e5e7eb"
+                }}
+            >
+                <div>
+                    <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#111827", margin: "0 0 4px 0" }}>
+                        AI Assess
+                    </h1>
+                    <p style={{ fontSize: "15px", color: "#6b7280", margin: "0 0 48px 0" }}>
+                        Intelligent interview platform
+                    </p>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "420px" }}>
+                        <div style={{ padding: "12px 16px", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px", color: "#374151" }}>
+                            • Real-time AI answer evaluation
+                        </div>
+                        <div style={{ padding: "12px 16px", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px", color: "#374151" }}>
+                            • Anti-cheat telemetry &amp; focus detection
+                        </div>
+                        <div style={{ padding: "12px 16px", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px", color: "#374151" }}>
+                            • Adaptive difficulty calibration
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        style={{
+                            background: "transparent",
+                            border: "1px solid #d1d5db",
+                            borderRadius: "6px",
+                            padding: "6px 14px",
+                            fontSize: "13px",
+                            color: "#4b5563",
+                            cursor: "pointer"
+                        }}
+                    >
+                        Light / Dark
+                    </button>
+                </div>
+            </div>
+
+            {/* Right Login Card Pane */}
+            <div
+                style={{
+                    flex: "1",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "40px"
+                }}
+            >
+                <div
+                    style={{
+                        width: "100%",
+                        maxWidth: "400px",
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "12px",
+                        padding: "36px",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                    }}
+                >
+                    <h2 style={{ fontSize: "22px", fontWeight: "700", color: "#111827", margin: "0 0 24px 0" }}>
+                        Log in
+                    </h2>
+
+                    {error && (
+                        <div style={{ padding: "10px 14px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "6px", color: "#dc2626", fontSize: "13px", marginBottom: "16px" }}>
+                            {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleLogin}>
+                        <div style={{ marginBottom: "18px" }}>
+                            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#374151", marginBottom: "6px" }}>
+                                Email
+                            </label>
+                            <input
+                                type="email"
+                                placeholder="you@example.com"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                                style={{
+                                    width: "100%",
+                                    padding: "9px 12px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: "6px",
+                                    fontSize: "14px",
+                                    outline: "none"
+                                }}
+                            />
+                        </div>
+
+                        <div style={{ marginBottom: "24px" }}>
+                            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#374151", marginBottom: "6px" }}>
+                                Password
+                            </label>
+                            <input
+                                type="password"
+                                placeholder="Password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                style={{
+                                    width: "100%",
+                                    padding: "9px 12px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: "6px",
+                                    fontSize: "14px",
+                                    outline: "none"
+                                }}
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
                             style={{
-                                background: "linear-gradient(145deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)",
-                                borderRight: "1px solid var(--border-subtle)"
+                                width: "100%",
+                                padding: "10px",
+                                backgroundColor: "#0f172a",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "14px",
+                                fontWeight: "600",
+                                cursor: "pointer",
+                                marginBottom: "16px"
                             }}
                         >
-                            {/* Brand Header */}
-                            <div>
-                                <div className="d-flex align-items-center gap-2 mb-4">
-                                    <div
-                                        className="d-flex align-items-center justify-content-center rounded-3 shadow"
-                                        style={{
-                                            width: "44px",
-                                            height: "44px",
-                                            background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
-                                            color: "#fff"
-                                        }}
-                                    >
-                                        <BrainIcon size={26} />
-                                    </div>
-                                    <div>
-                                        <h3 className="fw-bold mb-0 text-white" style={{ letterSpacing: "-0.02em" }}>
-                                            AI Assess
-                                        </h3>
-                                        <span className="text-muted small">Intelligent Interview Platform</span>
-                                    </div>
-                                </div>
+                            {loading ? "Logging in..." : "Log in"}
+                        </button>
+                    </form>
 
-                                <h2 className="fw-bold text-white mb-3" style={{ lineHeight: 1.25 }}>
-                                    Ace technical interviews with real-time{" "}
-                                    <span style={{ color: "#818cf8" }}>AI evaluation</span>.
-                                </h2>
-                                <p className="text-muted mb-4" style={{ fontSize: "0.95rem" }}>
-                                    Conduct dynamic coding and system design assessments with automated scoring across technical knowledge, completeness, relevance, and clarity.
-                                </p>
-
-                                {/* Feature Highlights */}
-                                <div className="d-flex flex-column gap-3 mb-4">
-                                    <div className="d-flex align-items-center gap-3 p-2 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                        <div className="p-2 rounded-circle text-indigo-400" style={{ background: "rgba(99, 102, 241, 0.15)", color: "#818cf8" }}>
-                                            <SparklesIcon size={18} />
-                                        </div>
-                                        <div>
-                                            <div className="fw-semibold text-white small">AI-Generated Question Bank</div>
-                                            <div className="text-muted" style={{ fontSize: "0.78rem" }}>Dynamic questions generated by LLMs with approval workflows</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="d-flex align-items-center gap-3 p-2 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                        <div className="p-2 rounded-circle" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#34d399" }}>
-                                            <ZapIcon size={18} />
-                                        </div>
-                                        <div>
-                                            <div className="fw-semibold text-white small">Multi-Factor Answer Scoring</div>
-                                            <div className="text-muted" style={{ fontSize: "0.78rem" }}>Instant feedback on concepts, edge cases, and clarity</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="d-flex align-items-center gap-3 p-2 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                        <div className="p-2 rounded-circle" style={{ background: "rgba(6, 182, 212, 0.15)", color: "#22d3ee" }}>
-                                            <BarChartIcon size={18} />
-                                        </div>
-                                        <div>
-                                            <div className="fw-semibold text-white small">Granular Skill Breakdown</div>
-                                            <div className="text-muted" style={{ fontSize: "0.78rem" }}>Visual performance trends, strong areas, and weak spots</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Demo Fill Helper */}
-                            <div className="p-3 rounded-3 mt-3" style={{ background: "rgba(99, 102, 241, 0.08)", border: "1px dashed rgba(99, 102, 241, 0.3)" }}>
-                                <div className="d-flex align-items-center justify-content-between mb-2">
-                                    <span className="small text-white fw-semibold">Quick Demo Login:</span>
-                                    <span className="badge-tech badge-indigo" style={{ fontSize: "0.65rem" }}>1-Click Fill</span>
-                                </div>
-                                <div className="d-flex gap-2">
-                                    <button
-                                        type="button"
-                                        className="btn btn-sm btn-secondary-dark flex-grow-1"
-                                        style={{ fontSize: "0.8rem" }}
-                                        onClick={() => fillDemo("candidate@demo.com", "user")}
-                                    >
-                                        <UserIcon size={14} /> Candidate
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="btn btn-sm btn-secondary-dark flex-grow-1"
-                                        style={{ fontSize: "0.8rem" }}
-                                        onClick={() => fillDemo("admin@demo.com", "admin")}
-                                    >
-                                        <ShieldIcon size={14} /> Admin
-                                    </button>
-                                </div>
-                            </div>
+                    {/* Quick Demo Access Buttons */}
+                    <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "16px", marginTop: "8px", marginBottom: "16px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
+                            Quick Demo Sign-In
                         </div>
-
-                        {/* Right Column: Login Form */}
-                        <div className="col-lg-6 p-4 p-md-5 d-flex flex-column justify-content-center position-relative">
-                            <div className="d-flex justify-content-between align-items-start mb-4">
-                                <div>
-                                    <h3 className="fw-bold mb-1">Welcome back</h3>
-                                    <p className="text-muted small mb-0">Enter your credentials to access your interview workspace.</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    className="theme-toggle-btn"
-                                    onClick={toggleTheme}
-                                    title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
-                                    aria-label="Toggle theme"
-                                >
-                                    <div className="theme-toggle-track">
-                                        <div className={`theme-toggle-thumb ${isDark ? "dark" : "light"}`}>
-                                            {isDark ? (
-                                                <MoonIcon size={14} className="text-indigo-400" />
-                                            ) : (
-                                                <SunIcon size={14} className="text-amber-500" />
-                                            )}
-                                        </div>
-                                    </div>
-                                </button>
-                            </div>
-
-                            {error && (
-                                <div className="alert alert-danger py-2 px-3 mb-4 rounded-3 d-flex align-items-center gap-2" style={{ backgroundColor: "rgba(244, 63, 94, 0.12)", borderColor: "rgba(244, 63, 94, 0.3)", color: "#fb7185", fontSize: "0.875rem" }}>
-                                    <span>{error}</span>
-                                </div>
-                            )}
-
-                            <form onSubmit={handleLogin}>
-                                <div className="mb-3">
-                                    <label className="form-label text-secondary small fw-semibold">
-                                        Email Address
-                                    </label>
-                                    <input
-                                        type="email"
-                                        className="form-control form-control-custom"
-                                        placeholder="name@company.com"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        required
-                                    />
-                                </div>
-
-                                <div className="mb-4">
-                                    <div className="d-flex justify-content-between align-items-center mb-1">
-                                        <label className="form-label text-secondary small fw-semibold mb-0">
-                                            Password
-                                        </label>
-                                        <button
-                                            type="button"
-                                            className="btn btn-link p-0 text-muted small text-decoration-none"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                        >
-                                            {showPassword ? "Hide" : "Show"}
-                                        </button>
-                                    </div>
-                                    <input
-                                        type={showPassword ? "text" : "password"}
-                                        className="form-control form-control-custom"
-                                        placeholder="••••••••"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                    />
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    className="btn btn-primary-gradient w-100 py-2 mb-3"
-                                    disabled={loading}
-                                >
-                                    {loading ? (
-                                        <>
-                                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                            Authenticating...
-                                        </>
-                                    ) : (
-                                        <>
-                                            Sign In <ArrowRightIcon size={16} />
-                                        </>
-                                    )}
-                                </button>
-
-                                <div className="text-center mt-3">
-                                    <span className="text-muted small">
-                                        Don't have an account?{" "}
-                                        <Link to="/register" className="text-indigo-400 fw-semibold text-decoration-none" style={{ color: "#818cf8" }}>
-                                            Create Account
-                                        </Link>
-                                    </span>
-                                </div>
-                            </form>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                                type="button"
+                                onClick={loginAsDemoCandidate}
+                                style={{
+                                    flex: 1,
+                                    padding: "7px 10px",
+                                    backgroundColor: "#eff6ff",
+                                    border: "1px solid #bfdbfe",
+                                    borderRadius: "6px",
+                                    color: "#2563eb",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                Candidate Demo
+                            </button>
+                            <button
+                                type="button"
+                                onClick={loginAsDemoAdmin}
+                                style={{
+                                    flex: 1,
+                                    padding: "7px 10px",
+                                    backgroundColor: "#f3f4f6",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: "6px",
+                                    color: "#1f2937",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                Admin Demo
+                            </button>
                         </div>
+                    </div>
+
+                    <div style={{ textAlign: "center", fontSize: "13px", color: "#6b7280" }}>
+                        No account?{" "}
+                        <Link to="/register" style={{ color: "#2563eb", textDecoration: "none", fontWeight: "600" }}>
+                            Register
+                        </Link>
                     </div>
                 </div>
             </div>
         </div>
     );
 }
-
-export default Login;

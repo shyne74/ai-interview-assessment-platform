@@ -88,9 +88,26 @@ const adaptiveInterviewSchema = new mongoose.Schema({
             highIdealSimilarity: { type: Boolean, default: false }
           },
           details: { type: Object, default: {} }
+        },
+        plagiarismReport: {
+          plagiarismScore: { type: Number, default: 0 },
+          originalityScore: { type: Number, default: 100 },
+          riskLevel: { type: String, default: "low" },
+          status: { type: String, default: "Clean" },
+          isPlagiarized: { type: Boolean, default: false },
+          detectedSources: [{ type: String }],
+          similarityWithIdeal: { type: Number, default: 0 },
+          details: { type: Object, default: {} }
         }
     }],
     
+    plagiarismSummary: {
+        overallPlagiarismScore: { type: Number, default: 0 },
+        overallOriginalityScore: { type: Number, default: 100 },
+        highestQuestionPlagiarism: { type: Number, default: 0 },
+        status: { type: String, default: "Clean" },
+        flaggedQuestionsCount: { type: Number, default: 0 }
+    },
     overallScore: { type: Number, default: 0 },
     overallFeedback: { type: String, default: "" },
     masteryBadge: { type: String, default: "Intermediate Practitioner" }

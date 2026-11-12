@@ -106,6 +106,8 @@ const ROLE_DOMAINS = {
     "Software Engineer": [
         "Algorithms",
         "Data Structures",
+        "Recursion & Backtracking",
+        "Dynamic Programming",
         "Python",
         "Object-Oriented Design",
         "System Programming"
@@ -187,6 +189,12 @@ const DOMAIN_ALIASES = {
     "algorithms": "Algorithms",
     "algorithms (112)": "Algorithms",
     "data structures": "Data Structures",
+    "recursion": "Recursion & Backtracking",
+    "backtracking": "Recursion & Backtracking",
+    "recursion & backtracking": "Recursion & Backtracking",
+    "recursion and backtracking": "Recursion & Backtracking",
+    "dynamic programming": "Dynamic Programming",
+    "dp": "Dynamic Programming",
     "document analysis": "System Programming",
     "python": "Python",
 
@@ -236,7 +244,7 @@ function canonicalRole(r) {
         }
     }
 
-    return "Software Engineer";
+    return r.trim();
 }
 
 /**
@@ -245,7 +253,10 @@ function canonicalRole(r) {
  */
 function canonicalDomain(rawDomain, questionText = "", role = "") {
     const effectiveRole = canonicalRole(role);
-    const validDomains = ROLE_DOMAINS[effectiveRole] || ROLE_DOMAINS["Software Engineer"];
+    if (!ROLE_DOMAINS[effectiveRole]) {
+        return (rawDomain && typeof rawDomain === "string" && rawDomain.trim()) ? rawDomain.trim() : (effectiveRole || "General");
+    }
+    const validDomains = ROLE_DOMAINS[effectiveRole];
 
     if (!rawDomain || typeof rawDomain !== "string") {
         return validDomains[0];

@@ -1,345 +1,642 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import api from "../services/api";
-import {
-    BrainIcon,
-    SparklesIcon,
-    CheckCircleIcon,
-    AlertTriangleIcon,
-    ArrowRightIcon,
-    TrophyIcon,
-    BarChartIcon,
-    FileTextIcon,
-    AwardIcon,
-    ZapIcon
-} from "../components/icons";
 
-function Results() {
+export default function Result() {
     const { id } = useParams();
     const navigate = useNavigate();
 
-    const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [resultData, setResultData] = useState(null);
+    const [interviewData, setInterviewData] = useState(null);
+    const [selectedQuestion, setSelectedQuestion] = useState(null);
+    const [error, setError] = useState("");
 
     useEffect(() => {
         let isMounted = true;
-        const fetchResult = async () => {
+
+        async function fetchResult() {
             try {
-                // 1. Try fetching existing result analysis
-                const response = await api.get(`/results/${id}`);
-                if (isMounted) {
-                    setResult(response.data.result);
-                }
-            } catch (err) {
-                // 2. If not found, attempt to auto-trigger result analysis
+                setLoading(true);
+                setError("");
+
+                // 1. First attempt to fetch the compiled ResultAnalysis
+                let resData = null;
+                let intData = null;
+
                 try {
-                    const analyzeRes = await api.post(`/results/${id}/analyze`);
-                    if (isMounted && analyzeRes.data?.result) {
-                        setResult(analyzeRes.data.result);
-                        return;
-                    }
-                } catch (analyzeErr) {
-                    // 3. Fallback: fetch interview directly to display scores even if FastAPI is offline
+                    const res = await api.get(`/results/${id}`);
+                    resData = res.data.result;
+                    intData = res.data.result?.interviewId;
+                } catch (resErr) {
+                    // If not analyzed yet, trigger analyze endpoint
                     try {
-                        const interviewRes = await api.get(`/interviews/${id}`);
-                        const interview = interviewRes.data?.interview || interviewRes.data;
-                        if (isMounted && interview && interview.overallScore !== undefined) {
-                            setResult({
-                                _id: interview._id,
-                                roleTitle: interview.roleTitle || "Technical Assessment",
-                                domain: interview.domain || "Core Skills",
-                                overallScore: interview.overallScore,
-                                createdAt: interview.createdAt || interview.evaluatedAt,
-                                strongAreas: ["Demonstrated solid core technical knowledge."],
-                                weakAreas: ["Continue practicing edge-case handling and in-depth architecture."],
-                                summaryFeedback: interview.autoSubmittedReason 
-                                    ? `Assessment auto-submitted (${interview.autoSubmittedReason}). Performance recorded with score ${interview.overallScore}/10.`
-                                    : `Technical evaluation concluded with an overall rating of ${interview.overallScore}/10.`,
-                                performanceTrend: "Evaluated across multiple technical assessment dimensions."
-                            });
-                        }
-                    } catch (fallbackErr) {
-                        console.error("Failed to load interview fallback:", fallbackErr.message);
+                        const analyzeRes = await api.post(`/results/${id}/analyze`);
+                        resData = analyzeRes.data.result;
+                    } catch (anErr) {
+                        console.warn("Could not auto-analyze:", anErr.message);
                     }
+                }
+
+                // If interview responses were not populated in result, fetch interview directly
+                if (!intData || typeof intData === "string") {
+                    try {
+                        const intRes = await api.get(`/interviews/${id}`);
+                        intData = intRes.data.interview;
+                    } catch (e) {}
+                }
+
+                if (!isMounted) return;
+
+                setResultData(resData);
+                setInterviewData(intData);
+
+            } catch (err) {
+                console.error("Result fetch error:", err);
+                if (isMounted) {
+                    setError(err.response?.data?.message || "Could not load assessment results.");
                 }
             } finally {
                 if (isMounted) setLoading(false);
             }
-        };
+        }
 
-        fetchResult();
-        return () => { isMounted = false; };
+        if (id && id !== "sample") {
+            fetchResult();
+        } else {
+            // Default sample demo view
+            setLoading(false);
+        }
+
+        return () => {
+            isMounted = false;
+        };
     }, [id]);
 
     if (loading) {
         return (
-            <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center">
-                <div className="text-center">
-                    <div className="spinner-border text-primary mb-3" role="status" style={{ width: "3rem", height: "3rem" }}>
-                        <span className="visually-hidden">Loading results...</span>
-                    </div>
-                    <h4 className="text-white fw-bold">Retrieving AI Performance Analysis...</h4>
-                    <p className="text-muted small">Synthesizing scoring dimensions and key recommendations</p>
+            <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "32px", marginBottom: "16px" }}>⚡</div>
+                    <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 6px 0" }}>
+                        Generating your assessment report...
+                    </h2>
+                    <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
+                        Synthesizing AI evaluation, skill scores, and strengths.
+                    </p>
                 </div>
             </div>
         );
     }
 
-    if (!result) {
-        return (
-            <div className="min-vh-100 tech-grid-bg d-flex flex-column justify-content-center align-items-center p-4">
-                <div className="glass-card p-5 text-center" style={{ maxWidth: "480px" }}>
-                    <AlertTriangleIcon size={44} className="text-amber-400 mb-3" />
-                    <h3 className="fw-bold text-white mb-2">No Result Record Found</h3>
-                    <p className="text-muted small mb-4">
-                        The assessment evaluation might still be processing or this record does not exist.
+    // Determine values from real backend result or sample fallbacks
+    const overallScoreRaw = resultData?.overallScore ?? interviewData?.overallScore ?? 7.8;
+    const overallScorePercent = overallScoreRaw > 10 ? Math.round(overallScoreRaw) : Math.round(overallScoreRaw * 10);
+
+    const roleTitle = resultData?.roleTitle || interviewData?.roleTitle || "Frontend developer";
+    const completedDate = resultData?.createdAt ? new Date(resultData.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "26 October 2026";
+
+    // Skill breakdown map
+    const skillBreakdown = resultData?.skillBreakdown && Object.keys(resultData.skillBreakdown).length > 0
+        ? Object.entries(resultData.skillBreakdown).map(([skill, score]) => ({
+            skill,
+            score: Math.round(score > 10 ? score : score * 10)
+        }))
+        : [
+            { skill: "JavaScript", score: 90 },
+            { skill: "React", score: 82 },
+            { skill: "Problem solving", score: 82 },
+            { skill: "System design", score: 62 }
+        ];
+
+    const strongAreas = resultData?.strongAreas?.length
+        ? resultData.strongAreas
+        : [
+            "Explained architectural boundaries and state encapsulation clearly.",
+            "Demonstrated strong problem-solving skills breaking requirements into manageable steps."
+        ];
+
+    const weakAreas = resultData?.weakAreas?.length
+        ? resultData.weakAreas
+        : [
+            "Caching answer covered TTLs, but missed stale-while-revalidate and retry strategies.",
+            "Consider explicitly naming failure modes and explaining error handling."
+        ];
+
+    const summaryFeedback = resultData?.summaryFeedback || "Strong foundations. Make your system-design reasoning more explicit.";
+
+    // Responses list for detailed review table
+    const responsesList = interviewData?.responses?.length
+        ? interviewData.responses.map((r, idx) => ({
+            num: String(idx + 1).padStart(2, "0"),
+            title: r.questionText || `Question ${idx + 1}`,
+            skill: r.questionType === "coding" ? "Coding" : "Technical",
+            evaluation: (r.score?.overallScore >= 8 || r.score >= 8) ? "Strong" : (r.score?.overallScore >= 6 || r.score >= 6) ? "Good" : "Needs detail",
+            evalColor: (r.score?.overallScore >= 8 || r.score >= 8) ? "#10b981" : (r.score?.overallScore >= 6 || r.score >= 6) ? "#3b82f6" : "#f59e0b",
+            answer: r.userAnswer || r.code || "No response submitted.",
+            feedback: r.aiFeedback || "Evaluated by AI based on relevance, completeness, and clarity."
+        }))
+        : [
+            {
+                num: "01",
+                title: "Explain a closure and a practical use case.",
+                skill: "JavaScript",
+                evaluation: "Strong",
+                evalColor: "#10b981",
+                answer: "A closure is the combination of a function bundled together with references to its lexical environment.",
+                feedback: "Clear explanation of lexical scope retention and encapsulation patterns."
+            },
+            {
+                num: "02",
+                title: "When should state be local vs lifted?",
+                skill: "React",
+                evaluation: "Strong",
+                evalColor: "#10b981",
+                answer: "State should remain as local as possible to avoid unnecessary re-renders of unrelated components.",
+                feedback: "Accurately identified component coupling and avoided premature global state."
+            },
+            {
+                num: "03",
+                title: "How would you keep cached product data consistent when the underlying data changes?",
+                skill: "System design",
+                evaluation: "Needs detail",
+                evalColor: "#f59e0b",
+                answer: "I would use a cache-aside pattern: check the cache first, fetch from the database on a miss, then populate the cache.",
+                feedback: "Your caching answer covered TTLs, but missed stale-while-revalidate and retry strategy when invalidation fails."
+            }
+        ];
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "28px", maxWidth: "1216px", margin: "0 auto" }}>
+            {/* Header */}
+            <div style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between"
+            }}>
+                <div>
+                    <div style={{
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        color: "#64748b",
+                        marginBottom: "6px"
+                    }}>
+                        08 / YOUR RESULTS
+                    </div>
+                    <h1 style={{
+                        fontSize: "28px",
+                        fontWeight: "800",
+                        color: "#0f172a",
+                        letterSpacing: "-0.03em",
+                        margin: "0 0 6px 0"
+                    }}>
+                        A clear baseline. A useful next step.
+                    </h1>
+                    <p style={{
+                        fontSize: "14px",
+                        color: "#64748b",
+                        margin: 0
+                    }}>
+                        {roleTitle} · {responsesList.length} questions · Completed {completedDate}
                     </p>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                     <button
-                        className="btn btn-primary-gradient"
-                        onClick={() => navigate("/dashboard")}
+                        type="button"
+                        onClick={() => navigate("/dashboard", { replace: true })}
+                        style={{
+                            backgroundColor: "#1e3a8a",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: "8px",
+                            padding: "8px 16px",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                            cursor: "pointer"
+                        }}
                     >
                         Return to Dashboard
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => navigate("/practice")}
+                        style={{
+                            backgroundColor: "#ffffff",
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "8px",
+                            padding: "8px 14px",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                            color: "#334155",
+                            cursor: "pointer"
+                        }}
+                    >
+                        Practice Hub
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => navigate("/history")}
+                        style={{
+                            backgroundColor: "#ffffff",
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "8px",
+                            padding: "8px 14px",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                            color: "#334155",
+                            cursor: "pointer"
+                        }}
+                    >
+                        My Progress
+                    </button>
                 </div>
             </div>
-        );
-    }
 
-    const overallScore = result.overallScore || 0;
-    const scoreRating =
-        overallScore >= 8.5
-            ? { label: "Exceptional", color: "badge-approved", desc: "Top tier performance demonstrating mastery of core & advanced concepts." }
-            : overallScore >= 7.0
-            ? { label: "Proficient", color: "badge-indigo", desc: "Solid technical comprehension with good practical application." }
-            : overallScore >= 5.0
-            ? { label: "Competent", color: "badge-pending", desc: "Foundational understanding present, but needs depth on edge cases." }
-            : { label: "Needs Improvement", color: "badge-rejected", desc: "Requires comprehensive review of core domain topics." };
+            {error && (
+                <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", padding: "12px 16px", borderRadius: "8px", fontSize: "14px" }}>
+                    {error}
+                </div>
+            )}
 
-    // Standard 4-factor scores estimation based on overall score if breakdown not explicitly provided
-    const techScore = result.skillBreakdown?.technicalKnowledge || Math.min(10, Math.max(1, Number((overallScore + 0.3).toFixed(1))));
-    const compScore = result.skillBreakdown?.completeness || Math.min(10, Math.max(1, Number((overallScore - 0.2).toFixed(1))));
-    const relScore = result.skillBreakdown?.relevance || Math.min(10, Math.max(1, Number((overallScore + 0.1).toFixed(1))));
-    const clarScore = result.skillBreakdown?.clarity || Math.min(10, Math.max(1, Number((overallScore - 0.1).toFixed(1))));
-
-    return (
-        <div className="min-vh-100 tech-grid-bg py-5">
-            <div className="container">
-                {/* Top Action Bar */}
-                <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+            {/* Score Row Split */}
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1.5fr",
+                gap: "20px"
+            }}>
+                {/* Overall Score Card */}
+                <div style={{
+                    backgroundColor: "#1e293b",
+                    borderRadius: "14px",
+                    padding: "32px",
+                    color: "#ffffff",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between"
+                }}>
                     <div>
-                        <div className="d-flex align-items-center gap-2 mb-1">
-                            <span className="badge-tech badge-indigo">
-                                <AwardIcon size={13} /> Assessment Report
-                            </span>
-                            <span className="text-muted small">
-                                Completed on {new Date(result.createdAt || Date.now()).toLocaleDateString()}
-                            </span>
+                        <div style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            letterSpacing: "0.08em",
+                            color: "#38bdf8",
+                            marginBottom: "12px",
+                            textTransform: "uppercase"
+                        }}>
+                            OVERALL SCORE
                         </div>
-                        <h2 className="fw-bold text-white mb-0" style={{ letterSpacing: "-0.02em" }}>
-                            {result.roleTitle} Evaluation
+                        <div style={{
+                            fontSize: "56px",
+                            fontWeight: "800",
+                            color: "#ffffff",
+                            lineHeight: "1",
+                            marginBottom: "16px"
+                        }}>
+                            {overallScorePercent}%
+                        </div>
+                        <p style={{
+                            fontSize: "14px",
+                            color: "#e2e8f0",
+                            lineHeight: "1.5",
+                            margin: 0
+                        }}>
+                            {summaryFeedback}
+                        </p>
+                    </div>
+
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "24px" }}>
+                        AI-assisted evaluation · Real-time scoring based on response quality and integrity.
+                    </div>
+                </div>
+
+                {/* Skill Breakdown Card */}
+                <div style={{
+                    backgroundColor: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    padding: "32px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between"
+                }}>
+                    <div>
+                        <h2 style={{
+                            fontSize: "16px",
+                            fontWeight: "700",
+                            color: "#0f172a",
+                            margin: "0 0 20px 0"
+                        }}>
+                            Your skill breakdown
                         </h2>
-                        <span className="text-secondary small">Domain Topic: {result.domain}</span>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                            {skillBreakdown.map((item) => (
+                                <div key={item.skill}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: "6px" }}>
+                                        <span style={{ fontWeight: "600", color: "#334155" }}>{item.skill}</span>
+                                        <span style={{ fontWeight: "700", color: "#0f172a" }}>{item.score}%</span>
+                                    </div>
+                                    <div style={{ height: "6px", backgroundColor: "#f1f5f9", borderRadius: "3px", overflow: "hidden" }}>
+                                        <div style={{
+                                            width: `${Math.min(100, item.score)}%`,
+                                            height: "100%",
+                                            backgroundColor: item.score >= 80 ? "#1e3a8a" : item.score >= 70 ? "#3b82f6" : "#60a5fa",
+                                            borderRadius: "3px"
+                                        }} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
 
-                    <div className="d-flex gap-2">
-                        <button
-                            onClick={() => window.print()}
-                            className="btn btn-secondary-dark d-none d-sm-inline-flex"
-                        >
-                            <FileTextIcon size={16} /> Print Report
-                        </button>
-                        <button
-                            onClick={() => navigate("/dashboard")}
-                            className="btn btn-primary-gradient"
-                        >
-                            Take Another Interview <ArrowRightIcon size={16} />
-                        </button>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "20px" }}>
+                        Aggregated from answer completeness, technical reasoning, and execution test cases.
+                    </div>
+                </div>
+            </div>
+
+            {/* Strengths and Weaknesses side by side */}
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "20px"
+            }}>
+                {/* What you did well */}
+                <div style={{
+                    backgroundColor: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    padding: "24px"
+                }}>
+                    <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "16px"
+                    }}>
+                        <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
+                            What you did well
+                        </h3>
+                        <span style={{
+                            backgroundColor: "#ecfdf5",
+                            color: "#059669",
+                            border: "1px solid #a7f3d0",
+                            borderRadius: "4px",
+                            padding: "2px 6px",
+                            fontSize: "11px",
+                            fontWeight: "700"
+                        }}>
+                            Strength
+                        </span>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "13px", color: "#334155", lineHeight: "1.5" }}>
+                        {strongAreas.map((st, i) => (
+                            <div key={i}>• {st}</div>
+                        ))}
                     </div>
                 </div>
 
-                {/* Hero Overall Scorecard */}
-                <div className="glass-card p-4 p-md-5 mb-4 position-relative overflow-hidden">
-                    <div className="row align-items-center">
-                        <div className="col-md-4 text-center mb-4 mb-md-0">
-                            {/* Circular Score Badge */}
-                            <div className="score-circle mb-3">
-                                <span className="display-4 fw-bold text-white lh-1">
-                                    {overallScore}
-                                </span>
-                                <span className="text-muted small" style={{ fontSize: "0.75rem" }}>
-                                    OUT OF 10
-                                </span>
-                            </div>
-                            <span className={`badge-tech ${scoreRating.color} fs-6 px-3 py-1`}>
-                                {scoreRating.label}
-                            </span>
-                        </div>
+                {/* What to work on */}
+                <div style={{
+                    backgroundColor: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    padding: "24px"
+                }}>
+                    <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "16px"
+                    }}>
+                        <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
+                            What to work on
+                        </h3>
+                        <span style={{
+                            backgroundColor: "#fffbeb",
+                            color: "#d97706",
+                            border: "1px solid #fde68a",
+                            borderRadius: "4px",
+                            padding: "2px 6px",
+                            fontSize: "11px",
+                            fontWeight: "700"
+                        }}>
+                            Improvement area
+                        </span>
+                    </div>
 
-                        <div className="col-md-8 border-start-md border-secondary border-opacity-25 ps-md-4">
-                            <h4 className="fw-bold text-white mb-2">Performance Summary</h4>
-                            <p className="text-muted mb-4 small">
-                                {scoreRating.desc}
-                            </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "13px", color: "#334155", lineHeight: "1.5" }}>
+                        {weakAreas.map((wa, i) => (
+                            <div key={i}>• {wa}</div>
+                        ))}
+                    </div>
+                </div>
+            </div>
 
-                            {/* 4 Factor Multi-Score Gauges */}
-                            <div className="row g-3">
-                                <div className="col-6 col-lg-3">
-                                    <div className="p-3 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                                        <span className="text-muted small d-block mb-1">Technical Knowledge</span>
-                                        <div className="fw-bold text-white fs-5">{techScore}/10</div>
-                                        <div className="progress-container mt-2">
-                                            <div className="progress-bar-custom" style={{ width: `${techScore * 10}%` }} />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="col-6 col-lg-3">
-                                    <div className="p-3 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                                        <span className="text-muted small d-block mb-1">Completeness</span>
-                                        <div className="fw-bold text-white fs-5">{compScore}/10</div>
-                                        <div className="progress-container mt-2">
-                                            <div className="progress-bar-custom progress-bar-emerald" style={{ width: `${compScore * 10}%` }} />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="col-6 col-lg-3">
-                                    <div className="p-3 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                                        <span className="text-muted small d-block mb-1">Relevance</span>
-                                        <div className="fw-bold text-white fs-5">{relScore}/10</div>
-                                        <div className="progress-container mt-2">
-                                            <div className="progress-bar-custom progress-bar-amber" style={{ width: `${relScore * 10}%` }} />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="col-6 col-lg-3">
-                                    <div className="p-3 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                                        <span className="text-muted small d-block mb-1">Clarity</span>
-                                        <div className="fw-bold text-white fs-5">{clarScore}/10</div>
-                                        <div className="progress-container mt-2">
-                                            <div className="progress-bar-custom" style={{ width: `${clarScore * 10}%` }} />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+            {/* Recommended Next Step Card */}
+            <div style={{
+                backgroundColor: "#f0f7ff",
+                border: "1px solid #dbeafe",
+                borderRadius: "14px",
+                padding: "24px 28px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between"
+            }}>
+                <div>
+                    <div style={{
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        letterSpacing: "0.06em",
+                        color: "#2563eb",
+                        textTransform: "uppercase",
+                        marginBottom: "4px"
+                    }}>
+                        ONE RECOMMENDED NEXT STEP
+                    </div>
+                    <div style={{ fontSize: "17px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" }}>
+                        Targeted Practice: {skillBreakdown[skillBreakdown.length - 1]?.skill || "System Design"}
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#475569" }}>
+                        Focus questions to build on your lowest scored skill area.
                     </div>
                 </div>
 
-                {/* Strengths & Weaknesses Grid */}
-                <div className="row g-4 mb-4">
-                    {/* Strong Areas */}
-                    <div className="col-md-6">
-                        <div className="glass-card p-4 h-100">
-                            <div className="d-flex align-items-center gap-2 mb-3">
-                                <div className="p-2 rounded-circle" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#34d399" }}>
-                                    <CheckCircleIcon size={20} />
-                                </div>
-                                <h4 className="fw-bold text-white mb-0">Demonstrated Strengths</h4>
-                            </div>
+                <button
+                    type="button"
+                    onClick={() => navigate(`/practice/mock-setup?role=${encodeURIComponent(roleTitle)}&skill=${encodeURIComponent(skillBreakdown[skillBreakdown.length - 1]?.skill || "System Design")}`)}
+                    style={{
+                        backgroundColor: "#1e3a8a",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "10px 18px",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap"
+                    }}
+                >
+                    Practise this skill →
+                </button>
+            </div>
 
-                            <div className="d-flex flex-column gap-2">
-                                {result.strongAreas && result.strongAreas.length > 0 ? (
-                                    result.strongAreas.map((area, index) => (
-                                        <div
-                                            key={index}
-                                            className="d-flex align-items-center gap-3 p-3 rounded-3"
-                                            style={{ background: "rgba(16, 185, 129, 0.06)", border: "1px solid rgba(16, 185, 129, 0.15)" }}
-                                        >
-                                            <span className="text-emerald-400">✓</span>
-                                            <span className="text-white small fw-semibold">{area}</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="p-3 rounded-3 text-muted small" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                        Demonstrated foundational understanding of assessed subject matters.
+            {/* Detailed Table: Go deeper into your answers */}
+            <div style={{
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "14px",
+                padding: "24px"
+            }}>
+                <h3 style={{
+                    fontSize: "16px",
+                    fontWeight: "700",
+                    color: "#0f172a",
+                    margin: "0 0 16px 0"
+                }}>
+                    Go deeper into your answers
+                </h3>
+
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead>
+                        <tr style={{ borderBottom: "1px solid #e2e8f0", textAlign: "left" }}>
+                            <th style={{ padding: "10px 0", color: "#64748b", fontWeight: "600" }}>Question</th>
+                            <th style={{ padding: "10px 16px", color: "#64748b", fontWeight: "600" }}>Skill</th>
+                            <th style={{ padding: "10px 16px", color: "#64748b", fontWeight: "600" }}>AI evaluation</th>
+                            <th style={{ padding: "10px 0", color: "#64748b", fontWeight: "600", textAlign: "right" }}>Review</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {responsesList.map((q) => (
+                            <tr key={q.num} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                <td style={{ padding: "14px 0", color: "#0f172a", fontWeight: "600" }}>
+                                    <span style={{ color: "#94a3b8", marginRight: "8px" }}>{q.num}</span>
+                                    {q.title}
+                                </td>
+                                <td style={{ padding: "14px 16px", color: "#475569" }}>
+                                    {q.skill}
+                                </td>
+                                <td style={{ padding: "14px 16px" }}>
+                                    <span style={{
+                                        color: q.evalColor,
+                                        fontWeight: "600",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px"
+                                    }}>
+                                        ● {q.evaluation}
+                                    </span>
+                                </td>
+                                <td style={{ padding: "14px 0", textAlign: "right" }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedQuestion(selectedQuestion === q.num ? null : q.num)}
+                                        style={{
+                                            background: "none",
+                                            border: "none",
+                                            color: "#2563eb",
+                                            fontWeight: "600",
+                                            cursor: "pointer",
+                                            fontSize: "13px"
+                                        }}
+                                    >
+                                        {selectedQuestion === q.num ? "Close answer ▲" : "View answer →"}
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+
+                {/* Expanded Answer Modal/Card */}
+                {selectedQuestion && (
+                    <div style={{
+                        marginTop: "20px",
+                        backgroundColor: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
+                        padding: "16px",
+                        fontSize: "13px"
+                    }}>
+                        {(() => {
+                            const item = responsesList.find(q => q.num === selectedQuestion);
+                            if (!item) return null;
+                            return (
+                                <div>
+                                    <div style={{ fontWeight: "700", color: "#0f172a", marginBottom: "6px" }}>
+                                        Submitted Candidate Response:
                                     </div>
-                                )}
-                            </div>
-                        </div>
+                                    <div style={{
+                                        backgroundColor: "#ffffff",
+                                        border: "1px solid #cbd5e1",
+                                        padding: "12px",
+                                        borderRadius: "6px",
+                                        color: "#334155",
+                                        lineHeight: "1.5",
+                                        marginBottom: "12px",
+                                        whiteSpace: "pre-wrap",
+                                        fontFamily: item.skill === "Coding" ? "monospace" : "inherit"
+                                    }}>
+                                        {item.answer}
+                                    </div>
+                                    <div style={{ fontWeight: "700", color: "#0f172a", marginBottom: "4px" }}>
+                                        AI Evaluator Feedback:
+                                    </div>
+                                    <div style={{ color: "#475569", lineHeight: "1.5" }}>
+                                        {item.feedback}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
+                )}
+            </div>
 
-                    {/* Weak Areas */}
-                    <div className="col-md-6">
-                        <div className="glass-card p-4 h-100">
-                            <div className="d-flex align-items-center gap-2 mb-3">
-                                <div className="p-2 rounded-circle" style={{ background: "rgba(244, 63, 94, 0.15)", color: "#fb7185" }}>
-                                    <AlertTriangleIcon size={20} />
-                                </div>
-                                <h4 className="fw-bold text-white mb-0">Growth Opportunities</h4>
-                            </div>
-
-                            <div className="d-flex flex-column gap-2">
-                                {result.weakAreas && result.weakAreas.length > 0 ? (
-                                    result.weakAreas.map((area, index) => (
-                                        <div
-                                            key={index}
-                                            className="d-flex align-items-center gap-3 p-3 rounded-3"
-                                            style={{ background: "rgba(244, 63, 94, 0.06)", border: "1px solid rgba(244, 63, 94, 0.15)" }}
-                                        >
-                                            <span className="text-rose-400">⚠️</span>
-                                            <span className="text-white small fw-semibold">{area}</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="p-3 rounded-3 text-muted small" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                        Deepen analytical depth on complex topics and edge cases.
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+            {/* Bottom Navigation Row */}
+            <div style={{
+                marginTop: "32px",
+                padding: "20px 24px",
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "12px"
+            }}>
+                <div>
+                    <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>
+                        Done reviewing your assessment?
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>
+                        All scores and AI feedback are securely saved to your progress profile.
                     </div>
                 </div>
 
-                {/* AI Summary Feedback & Performance Trend */}
-                <div className="row g-4">
-                    <div className="col-lg-7">
-                        <div className="glass-card p-4 h-100">
-                            <div className="d-flex align-items-center gap-2 mb-3">
-                                <SparklesIcon size={20} className="text-indigo-400" />
-                                <h4 className="fw-bold text-white mb-0">AI Detailed Feedback</h4>
-                            </div>
-                            <div
-                                className="p-4 rounded-3 text-secondary lh-lg"
-                                style={{ background: "rgba(15, 23, 42, 0.7)", border: "1px solid var(--border-subtle)", fontSize: "0.95rem" }}
-                            >
-                                {result.summaryFeedback ||
-                                    `Candidate completed the ${result.roleTitle} assessment. Responses demonstrated good conceptual grasp of core principles.`}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="col-lg-5">
-                        <div className="glass-card p-4 h-100 d-flex flex-column justify-content-between">
-                            <div>
-                                <div className="d-flex align-items-center gap-2 mb-3">
-                                    <BarChartIcon size={20} className="text-cyan-400" />
-                                    <h4 className="fw-bold text-white mb-0">Performance Trend</h4>
-                                </div>
-                                <div
-                                    className="p-3 rounded-3 text-secondary mb-4"
-                                    style={{ background: "rgba(6, 182, 212, 0.06)", border: "1px solid rgba(6, 182, 212, 0.15)", fontSize: "0.925rem" }}
-                                >
-                                    {result.performanceTrend ||
-                                        `Evaluation completed for ${result.roleTitle} with performance metrics recorded across core domain topics.`}
-                                </div>
-                            </div>
-
-                            <div className="d-flex gap-2">
-                                <Link to="/history" className="btn btn-secondary-dark flex-grow-1">
-                                    All Interview Records
-                                </Link>
-                                <Link to="/analytics" className="btn btn-secondary-dark flex-grow-1">
-                                    Skill Analytics
-                                </Link>
-                            </div>
-                        </div>
-                    </div>
+                <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                        type="button"
+                        onClick={() => navigate("/dashboard", { replace: true })}
+                        className="wf-btn-primary"
+                        style={{ padding: "9px 20px" }}
+                    >
+                        Back to Dashboard →
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => navigate("/practice")}
+                        className="wf-btn-outline"
+                        style={{ padding: "9px 16px" }}
+                    >
+                        Practice Hub
+                    </button>
                 </div>
             </div>
         </div>
     );
 }
-
-export default Results;

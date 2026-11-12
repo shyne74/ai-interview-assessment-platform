@@ -1,910 +1,1011 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import api from "../services/api";
-import {
-    SparklesIcon,
-    BrainIcon,
-    CheckCircleIcon,
-    ArrowRightIcon,
-    BookOpenIcon,
-    CheckIcon,
-    LayersIcon,
-    ZapIcon,
-    FileTextIcon,
-    CodeIcon
-} from "../components/icons";
-import Toast from "../components/Toast";
+import api from "../utils/api";
 
-function AIGenerator() {
+export default function AIGenerator() {
     const navigate = useNavigate();
-    const [mode, setMode] = useState("topic"); // "topic" | "pdf" | "jd"
+    const [activeTool, setActiveTool] = useState("pdf"); // "pdf" | "jd"
+    const [rolesList, setRolesList] = useState([]);
 
-    // Preset State
-    const [role, setRole] = useState("Full Stack Developer");
-    const [domain, setDomain] = useState("React");
-    const [difficulty, setDifficulty] = useState("medium");
-    const [numQuestions, setNumQuestions] = useState(5);
-    const [assessmentType, setAssessmentType] = useState("theory"); // "theory" | "coding" | "mixed"
+    // Global notifications
+    const [actionToast, setActionToast] = useState("");
+    const [errorToast, setErrorToast] = useState("");
 
-    // PDF Assimilation State
+    // ==========================================
+    // PDF Sub-panel State
+    // ==========================================
     const [pdfFile, setPdfFile] = useState(null);
-    const [pdfAnalysisLoading, setPdfAnalysisLoading] = useState(false);
-    const [pdfDigest, setPdfDigest] = useState(null);
+    const [pdfFileName, setPdfFileName] = useState("");
+    const [pdfStage, setPdfStage] = useState(1); // 1: Upload, 2: Review Topics & Configure
+    const [pdfAnalyzing, setPdfAnalyzing] = useState(false);
+    const [pdfProgressText, setPdfProgressText] = useState("");
+    const [pdfSummary, setPdfSummary] = useState("");
+    const [detectedDomain, setDetectedDomain] = useState("");
+    const [pdfTotalPages, setPdfTotalPages] = useState(1);
+    const [pdfFullText, setPdfFullText] = useState("");
+    const [extractedTopics, setExtractedTopics] = useState([]);
     const [selectedTopics, setSelectedTopics] = useState([]);
-    const [pdfCustomPrompt, setPdfCustomPrompt] = useState("");
-    const [pdfTargetRole, setPdfTargetRole] = useState("");
-    const [pdfTargetDifficulty, setPdfTargetDifficulty] = useState("medium");
-    const [pdfAssessmentType, setPdfAssessmentType] = useState("theory");
+    const [customTopicInput, setCustomTopicInput] = useState("");
 
-    // JD Analyzer State
+    // PDF Question Generation Configuration
+    const [pdfRole, setPdfRole] = useState("Backend Developer");
+    const [pdfDifficulty, setPdfDifficulty] = useState("medium");
+    const [pdfCount, setPdfCount] = useState(5);
+    const [pdfFormat, setPdfFormat] = useState("theory");
+    const [generatingPdfQuestions, setGeneratingPdfQuestions] = useState(false);
+
+    // ==========================================
+    // JD Sub-panel State
+    // ==========================================
     const [jdText, setJdText] = useState("");
-    const [jdFile, setJdFile] = useState(null);
-    const [jdRoleOverride, setJdRoleOverride] = useState("");
-    const [jdAssessmentType, setJdAssessmentType] = useState("mixed");
+    const [jdCount, setJdCount] = useState(5);
     const [jdDifficulty, setJdDifficulty] = useState("medium");
-    const [jdNumQuestions, setJdNumQuestions] = useState(5);
-    const [jdAnalysisResult, setJdAnalysisResult] = useState(null);
-    const [jdLoading, setJdLoading] = useState(false);
+    const [jdFormat, setJdFormat] = useState("mixed");
+    const [jdAnalyzing, setJdAnalyzing] = useState(false);
+    const [jdProgressText, setJdProgressText] = useState("");
+    const [jdAnalysisData, setJdAnalysisData] = useState(null);
 
-    // Common Output State
-    const [questions, setQuestions] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [launchingTest, setLaunchingTest] = useState(false);
-    const [approvedMap, setApprovedMap] = useState({});
-    const [toast, setToast] = useState({ show: false, message: "", type: "info" });
+    // ==========================================
+    // Review Queue State (Generated Questions)
+    // ==========================================
+    const [reviewQueue, setReviewQueue] = useState([]);
+    const [editingQuestion, setEditingQuestion] = useState(null);
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [approvingAll, setApprovingAll] = useState(false);
 
-    const presets = [
-        { role: "Full Stack Developer", domain: "React & Node.js", difficulty: "medium" },
-        { role: "Frontend Engineer", domain: "React & TypeScript", difficulty: "medium" },
-        { role: "Backend Developer", domain: "Node.js & MongoDB", difficulty: "hard" },
-        { role: "System Architect", domain: "System Design & Microservices", difficulty: "hard" },
-        { role: "Junior Web Developer", domain: "JavaScript & HTML/CSS", difficulty: "easy" }
-    ];
+    // Load available roles
+    useEffect(() => {
+        const loadRoles = async () => {
+            try {
+                const res = await api.get("/roles");
+                const roles = res.data.roles || [];
+                setRolesList(roles);
+                if (roles.length > 0) setPdfRole(roles[0].title);
+            } catch (err) {
+                console.error("Failed to load roles:", err);
+            }
+        };
+        loadRoles();
+    }, []);
 
-    const handleApplyPreset = (p) => {
-        setRole(p.role);
-        setDomain(p.domain);
-        setDifficulty(p.difficulty);
+    // -------------------------------------------------------------
+    // PDF Handlers
+    // -------------------------------------------------------------
+    const handlePdfFileSelect = (file) => {
+        if (!file) return;
+        setPdfFile(file);
+        setPdfFileName(file.name);
+        setErrorToast("");
     };
 
-    // Direct 1-Click Interview Launch with exact questions
-    const handleLaunchDirectInterview = async (customRole, customDomain, specificQuestions) => {
-        const qList = specificQuestions || questions;
-        if (!qList || qList.length === 0) {
-            setToast({ show: true, message: "No generated questions available to start test.", type: "warning" });
-            return;
-        }
-
-        try {
-            setLaunchingTest(true);
-            const rTitle = customRole || role || "Full Stack Developer";
-            const dDomain = customDomain || domain || "Technical Assessment";
-            const qIds = qList.map(q => q._id).filter(Boolean);
-
-            const res = await api.post("/interviews", {
-                roleTitle: rTitle,
-                domain: dDomain,
-                limit: qList.length,
-                assessmentType: mode === "jd" ? jdAssessmentType : (mode === "pdf" ? pdfAssessmentType : assessmentType),
-                questionIds: qIds.length > 0 ? qIds : undefined
-            });
-
-            const interviewId = res.data.interviewId;
-            const interviewQuestions = res.data.questions || qList;
-
-            setToast({ show: true, message: "Launching your custom interview test room...", type: "success" });
-            navigate(`/interview/${interviewId}`, {
-                state: { questions: interviewQuestions }
-            });
-        } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || err.message || "Failed to initiate test session.",
-                type: "error"
-            });
-        } finally {
-            setLaunchingTest(false);
-        }
-    };
-
-    // Direct 1-Click Adaptive Exam Launch
-    const handleLaunchDirectAdaptive = async (customRole, customDomain) => {
-        try {
-            setLaunchingTest(true);
-            const rTitle = customRole || role || "Full Stack Developer";
-            const dDomain = customDomain || domain || "General";
-
-            const res = await api.post("/adaptive/start", {
-                roleTitle: rTitle,
-                domain: dDomain
-            });
-
-            navigate(`/adaptive-interview/${res.data.interviewId}`);
-        } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || err.message || "Failed to start adaptive exam.",
-                type: "error"
-            });
-        } finally {
-            setLaunchingTest(false);
-        }
-    };
-
-    // 1. Standard Preset Generator
-    const generateQuestions = async () => {
-        if (!role.trim() || !domain.trim()) {
-            setToast({
-                show: true,
-                message: "Please provide both a Role and a Domain/Topic.",
-                type: "warning"
-            });
-            return;
-        }
-
-        try {
-            setLoading(true);
-            const response = await api.post("/question/generate", {
-                role: role.trim(),
-                domain: domain.trim(),
-                difficulty,
-                num_question: Number(numQuestions)
-            });
-
-            const generated = response.data.question || [];
-            setQuestions(generated);
-            setToast({
-                show: true,
-                message: `Successfully generated ${generated.length} AI questions!`,
-                type: "success"
-            });
-        } catch (err) {
-            const msg = err.response?.data?.message || err.message || "Failed to generate AI questions.";
-            setToast({
-                show: true,
-                message: msg,
-                type: "error"
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // 2. PDF Phase 1: Ingestion & Topic Assimilation
     const handleAnalyzePdf = async () => {
         if (!pdfFile) {
-            setToast({ show: true, message: "Please select a PDF document first.", type: "warning" });
+            setErrorToast("Please select a PDF file first.");
             return;
         }
 
-        try {
-            setPdfAnalysisLoading(true);
-            setPdfDigest(null);
-            setSelectedTopics([]);
+        setPdfAnalyzing(true);
+        setErrorToast("");
+        setPdfProgressText("Uploading document and parsing page contents...");
 
+        try {
             const formData = new FormData();
             formData.append("pdf", pdfFile);
 
-            const response = await api.post("/question/analyze-pdf", formData, {
+            const timer = setTimeout(() => {
+                setPdfProgressText("Extracting domain architecture and key chapters via Groq AI...");
+            }, 3000);
+
+            const res = await api.post("/question/analyze-pdf", formData, {
                 headers: { "Content-Type": "multipart/form-data" }
             });
+            clearTimeout(timer);
 
-            setPdfDigest(response.data);
-            if (response.data.detectedDomain) {
-                setPdfTargetRole(response.data.detectedDomain);
-            }
-            // Auto-select first two topics
-            if (response.data.topics && response.data.topics.length > 0) {
-                setSelectedTopics(response.data.topics.slice(0, 3).map(t => t.name));
+            const data = res.data;
+            if (!data.topics || data.topics.length === 0) {
+                throw new Error("No structured topics could be extracted from this PDF.");
             }
 
-            setToast({
-                show: true,
-                message: `PDF assimilated! Extracted ${response.data.topics?.length || 0} core topics.`,
-                type: "success"
-            });
+            setPdfSummary(data.summary || "");
+            setDetectedDomain(data.detectedDomain || "Document Study");
+            setPdfTotalPages(data.totalPages || 1);
+            setPdfFullText(data.fullText || "");
+
+            const topicNames = data.topics.map(t => typeof t === "string" ? t : t.name);
+            setExtractedTopics(topicNames);
+            setSelectedTopics(topicNames);
+            setPdfStage(2);
+            setActionToast(`Document analyzed: ${data.totalPages || 1} pages parsed, ${topicNames.length} topics extracted.`);
         } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || err.message || "Failed to analyze PDF.",
-                type: "error"
-            });
+            console.error("PDF analysis error:", err);
+            setErrorToast(err.response?.data?.message || err.message || "Failed to analyze document.");
         } finally {
-            setPdfAnalysisLoading(false);
+            setPdfAnalyzing(false);
+            setPdfProgressText("");
+            setTimeout(() => setActionToast(""), 4000);
         }
     };
 
-    // 2. PDF Phase 2: Generate Questions from Selected Topics
-    const handleGenerateFromTopics = async () => {
-        if (!pdfDigest) {
-            setToast({ show: true, message: "Please assimilate a PDF first.", type: "warning" });
-            return;
+    const toggleTopic = (t) => {
+        if (selectedTopics.includes(t)) {
+            if (selectedTopics.length === 1) return;
+            setSelectedTopics(selectedTopics.filter(item => item !== t));
+        } else {
+            setSelectedTopics([...selectedTopics, t]);
         }
+    };
+
+    const handleAddCustomTopic = (e) => {
+        if (e.key === "Enter" || e.type === "click") {
+            e.preventDefault();
+            const val = customTopicInput.trim();
+            if (val && !extractedTopics.includes(val)) {
+                setExtractedTopics([...extractedTopics, val]);
+                setSelectedTopics([...selectedTopics, val]);
+                setCustomTopicInput("");
+            }
+        }
+    };
+
+    const handleGenerateFromPdfTopics = async () => {
         if (selectedTopics.length === 0) {
-            setToast({ show: true, message: "Please select at least one topic card.", type: "warning" });
+            setErrorToast("Please select at least one topic for question generation.");
             return;
         }
 
+        setGeneratingPdfQuestions(true);
+        setErrorToast("");
+        setPdfProgressText("Synthesizing grounded questions from reference document...");
+
         try {
-            setLoading(true);
-            const response = await api.post("/question/generate-from-topics", {
-                pdfText: pdfDigest.fullText || pdfDigest.extractedTextSnippet || "",
+            const payload = {
+                role: pdfRole,
+                domain: selectedTopics[0] || detectedDomain || "General",
                 selectedTopics: selectedTopics,
-                role: pdfTargetRole || "Software Engineer",
-                domain: selectedTopics[0] || "General",
-                difficulty: pdfTargetDifficulty,
-                num_questions: Number(numQuestions),
-                assessmentType: pdfAssessmentType,
-                customPrompt: pdfCustomPrompt,
+                difficulty: pdfDifficulty.toLowerCase(),
+                num_questions: Number(pdfCount),
+                assessmentType: pdfFormat.toLowerCase(),
+                pdfText: pdfFullText,
                 autoSave: true
-            });
+            };
 
-            const generated = response.data.questions || [];
-            setQuestions(generated);
-            setToast({
-                show: true,
-                message: `Generated and added ${generated.length} questions to Question Bank!`,
-                type: "success"
-            });
+            const res = await api.post("/question/generate-from-topics", payload);
+            const qs = res.data.questions || [];
+
+            if (qs.length === 0) {
+                throw new Error("No questions were generated by the AI model. Please retry.");
+            }
+
+            // Append to review queue
+            const newReviewItems = qs.map(q => ({
+                _id: q._id,
+                questionText: q.questionText,
+                role: q.role || pdfRole,
+                domain: q.domain || selectedTopics[0],
+                difficulty: q.difficulty || pdfDifficulty,
+                assessmentType: q.assessmentType || pdfFormat,
+                idealAnswer: q.idealAnswer,
+                status: q.status || "pending",
+                source: "PDF Document"
+            }));
+
+            setReviewQueue([...newReviewItems, ...reviewQueue]);
+            setActionToast(`Generated ${qs.length} questions from document! Ready for review.`);
         } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || err.message || "Topic question generation failed.",
-                type: "error"
-            });
+            console.error("PDF question generation error:", err);
+            setErrorToast(err.response?.data?.message || err.message || "Failed to generate questions.");
         } finally {
-            setLoading(false);
+            setGeneratingPdfQuestions(false);
+            setPdfProgressText("");
+            setTimeout(() => setActionToast(""), 4000);
         }
     };
 
-    // 3. JD Semantic Analyzer
-    const handleAnalyzeJD = async () => {
-        if (!jdText.trim() && !jdFile) {
-            setToast({ show: true, message: "Please paste a Job Description or upload a document.", type: "warning" });
+    // -------------------------------------------------------------
+    // JD Handlers
+    // -------------------------------------------------------------
+    const loadSampleJd = () => {
+        setJdText(
+            "Senior Distributed Systems Engineer (Go / Kubernetes)\n\n" +
+            "Key Requirements:\n" +
+            "• 5+ years building scalable microservices in Go or Node.js.\n" +
+            "• In-depth expertise in distributed consensus (Raft/Paxos), database replication, and event streaming (Kafka/RabbitMQ).\n" +
+            "• Strong understanding of Docker, Kubernetes orchestration, and cloud infrastructure.\n" +
+            "• Experience designing high-throughput, low-latency gRPC and RESTful microservices."
+        );
+        setErrorToast("");
+    };
+
+    const handleAnalyzeJd = async () => {
+        if (!jdText.trim()) {
+            setErrorToast("Please paste or type the Job Description text.");
             return;
         }
 
+        setJdAnalyzing(true);
+        setErrorToast("");
+        setJdProgressText("Extracting seniority, competency matrices, and technical requirements...");
+
         try {
-            setJdLoading(true);
-            setJdAnalysisResult(null);
+            const payload = {
+                jdText: jdText.trim(),
+                num_questions: Number(jdCount),
+                difficulty: jdDifficulty.toLowerCase(),
+                assessmentType: jdFormat.toLowerCase()
+            };
 
-            const formData = new FormData();
-            if (jdFile) formData.append("jdFile", jdFile);
-            if (jdText) formData.append("jdText", jdText);
-            if (jdRoleOverride) formData.append("roleOverride", jdRoleOverride);
-            formData.append("num_questions", String(jdNumQuestions));
-            formData.append("assessmentType", jdAssessmentType);
-            formData.append("difficulty", jdDifficulty);
+            const res = await api.post("/question/analyze-jd", payload);
+            const data = res.data;
 
-            const response = await api.post("/question/analyze-jd", formData, {
-                headers: { "Content-Type": "multipart/form-data" }
-            });
+            setJdAnalysisData(data);
 
-            setJdAnalysisResult(response.data);
-            setQuestions(response.data.questions || []);
-            setToast({
-                show: true,
-                message: `Analyzed JD! Created ${response.data.questions?.length || 0} questions in ${response.data.roleTitle} folder.`,
-                type: "success"
-            });
-        } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || err.message || "Failed to analyze Job Description.",
-                type: "error"
-            });
-        } finally {
-            setJdLoading(false);
-        }
-    };
+            const qs = data.questions || [];
+            if (qs.length > 0) {
+                const newReviewItems = qs.map(q => ({
+                    _id: q._id,
+                    questionText: q.questionText,
+                    role: q.role || data.roleTitle || "Target Role",
+                    domain: q.domain || data.primaryDomain || "Technical Competencies",
+                    difficulty: q.difficulty || jdDifficulty,
+                    assessmentType: q.assessmentType || jdFormat,
+                    idealAnswer: q.idealAnswer,
+                    status: q.status || "pending",
+                    source: "Job Description"
+                }));
 
-    const handleApproveInline = async (id, index) => {
-        try {
-            if (id) {
-                await api.patch(`/question/${id}/approve`);
+                setReviewQueue([...newReviewItems, ...reviewQueue]);
+                setActionToast(`Analyzed JD and generated ${qs.length} calibrated questions!`);
             }
-            setApprovedMap((prev) => ({ ...prev, [id || index]: true }));
-            setToast({
-                show: true,
-                message: "Question approved and active in the Question Bank!",
-                type: "success"
-            });
         } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || "Approval failed.",
-                type: "error"
-            });
+            console.error("JD analysis error:", err);
+            setErrorToast(err.response?.data?.message || err.message || "Failed to analyze Job Description.");
+        } finally {
+            setJdAnalyzing(false);
+            setJdProgressText("");
+            setTimeout(() => setActionToast(""), 4000);
         }
     };
 
-    const toggleTopicSelection = (topicName) => {
-        setSelectedTopics(prev =>
-            prev.includes(topicName)
-                ? prev.filter(t => t !== topicName)
-                : [...prev, topicName]
-        );
+    // -------------------------------------------------------------
+    // Review Queue Handlers (Approve, Reject, Discard, Edit)
+    // -------------------------------------------------------------
+    const handleApproveQuestion = async (q) => {
+        try {
+            if (q._id) {
+                await api.patch(`/question/${q._id}/approve`);
+            }
+            setReviewQueue(prev => prev.map(item => item._id === q._id ? { ...item, status: "approved" } : item));
+            setActionToast(`Question approved and published to Question Bank.`);
+        } catch (err) {
+            setErrorToast(err.response?.data?.message || "Failed to approve question.");
+        } finally {
+            setTimeout(() => setActionToast(""), 3500);
+        }
+    };
+
+    const handleRejectQuestion = async (q) => {
+        try {
+            if (q._id) {
+                await api.patch(`/question/${q._id}/rejected`);
+            }
+            setReviewQueue(prev => prev.map(item => item._id === q._id ? { ...item, status: "rejected" } : item));
+            setActionToast(`Question status marked as rejected.`);
+        } catch (err) {
+            setErrorToast(err.response?.data?.message || "Failed to reject question.");
+        } finally {
+            setTimeout(() => setActionToast(""), 3500);
+        }
+    };
+
+    const handleDiscardQuestion = async (q) => {
+        try {
+            if (q._id) {
+                await api.delete(`/question/${q._id}`);
+            }
+            setReviewQueue(prev => prev.filter(item => item._id !== q._id));
+            setActionToast("Question discarded.");
+        } catch (err) {
+            setErrorToast(err.response?.data?.message || "Failed to discard question.");
+        } finally {
+            setTimeout(() => setActionToast(""), 3500);
+        }
+    };
+
+    const handleApproveAll = async () => {
+        const pendingQuestions = reviewQueue.filter(q => q.status !== "approved" && q._id);
+        if (pendingQuestions.length === 0) return;
+
+        setApprovingAll(true);
+        let count = 0;
+        for (const q of pendingQuestions) {
+            try {
+                await api.patch(`/question/${q._id}/approve`);
+                count++;
+            } catch (err) {
+                console.warn(`Failed to approve ${q._id}`);
+            }
+        }
+
+        setReviewQueue(prev => prev.map(q => ({ ...q, status: "approved" })));
+        setActionToast(`All ${count} questions approved and published to bank!`);
+        setApprovingAll(false);
+        setTimeout(() => setActionToast(""), 4000);
+    };
+
+    const handleOpenEdit = (q) => {
+        setEditingQuestion({ ...q });
+        setEditModalOpen(true);
+    };
+
+    const handleSaveEdit = async (e) => {
+        e.preventDefault();
+        if (!editingQuestion) return;
+
+        try {
+            if (editingQuestion._id) {
+                await api.put(`/question/${editingQuestion._id}`, editingQuestion);
+            }
+            setReviewQueue(prev => prev.map(q => q._id === editingQuestion._id ? { ...q, ...editingQuestion } : q));
+            setEditModalOpen(false);
+            setActionToast("Question updated successfully.");
+        } catch (err) {
+            setErrorToast(err.response?.data?.message || "Failed to save question edit.");
+        } finally {
+            setTimeout(() => setActionToast(""), 3500);
+        }
     };
 
     return (
-        <div className="min-vh-100 tech-grid-bg pb-5">
-            {toast.show && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={() => setToast({ ...toast, show: false })}
-                />
+        <div style={{ maxWidth: "1240px", margin: "0 auto" }}>
+            {/* Breadcrumb */}
+            <div className="wf-breadcrumb">
+                <span>Admin</span>
+                <span>·</span>
+                <span style={{ color: "#111827", fontWeight: "600" }}>AI tools</span>
+            </div>
+
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+                <div>
+                    <h1 className="wf-page-title" style={{ margin: "0 0 4px 0" }}>
+                        AI question generation & assimilation
+                    </h1>
+                    <p className="wf-page-subtitle" style={{ margin: 0 }}>
+                        Synthesize questions grounded in study materials (PDF) or calibrate assessments against real job descriptions (JD).
+                    </p>
+                </div>
+                <Link to="/questionbank" className="wf-btn-outline">
+                    View Question Bank →
+                </Link>
+            </div>
+
+            {actionToast && (
+                <div style={{ padding: "12px 18px", backgroundColor: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", color: "#065f46", fontSize: "13px", fontWeight: "600", marginBottom: "16px" }}>
+                    ✓ {actionToast}
+                </div>
             )}
 
-            <div className="container py-4 py-md-5">
-                {/* Header */}
-                <div className="glass-card p-4 p-md-5 mb-4 position-relative overflow-hidden">
-                    <div
-                        style={{
-                            position: "absolute",
-                            top: "-30px",
-                            right: "-30px",
-                            width: "200px",
-                            height: "200px",
-                            borderRadius: "50%",
-                            background: "radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, transparent 70%)",
-                            pointerEvents: "none"
-                        }}
-                    />
-
-                    <div className="d-flex align-items-center gap-2 mb-2">
-                        <span className="badge-tech badge-indigo">
-                            <SparklesIcon size={14} /> AI Intelligence Suite
-                        </span>
-                    </div>
-
-                    <h1 className="fw-bold text-white mb-2" style={{ letterSpacing: "-0.02em" }}>
-                        AI Question & Assessment Generator
-                    </h1>
-
-                    <p className="text-muted mb-4 fs-6" style={{ maxWidth: "650px" }}>
-                        Generate calibrated interview questions via Topic Presets, Intelligent PDF Knowledge Assimilation, or Job Description (JD) Semantic Mapping.
-                    </p>
-
-                    {/* Navigation Tabs */}
-                    <div className="d-flex flex-wrap gap-2">
-                        <button
-                            className={`btn btn-sm ${mode === "topic" ? "btn-primary-gradient" : "btn-secondary-dark"}`}
-                            onClick={() => setMode("topic")}
-                        >
-                            <LayersIcon size={16} /> Role & Topic Presets
-                        </button>
-                        <button
-                            className={`btn btn-sm ${mode === "pdf" ? "btn-primary-gradient" : "btn-secondary-dark"}`}
-                            onClick={() => setMode("pdf")}
-                        >
-                            <FileTextIcon size={16} /> 📄 Adaptive PDF Assimilation
-                        </button>
-                        <button
-                            className={`btn btn-sm ${mode === "jd" ? "btn-primary-gradient" : "btn-secondary-dark"}`}
-                            onClick={() => setMode("jd")}
-                        >
-                            <ZapIcon size={16} /> 💼 Job Description (JD) Analyzer
-                        </button>
-                    </div>
+            {errorToast && (
+                <div style={{ padding: "12px 18px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600", marginBottom: "16px" }}>
+                    ⚠ {errorToast}
                 </div>
+            )}
 
-                <div className="row g-4">
-                    {/* Left Generation Form */}
-                    <div className="col-lg-5">
-                        {/* TAB 1: PRESETS */}
-                        {mode === "topic" && (
-                            <div className="glass-card p-4">
-                                <h4 className="fw-bold text-white mb-3">Topic Preset Parameters</h4>
-                                <div className="mb-3">
-                                    <label className="form-label text-secondary small fw-semibold">Quick Presets</label>
-                                    <div className="d-flex flex-wrap gap-2">
-                                        {presets.map((p, i) => (
-                                            <button
-                                                key={i}
-                                                type="button"
-                                                className="btn btn-secondary-dark btn-sm"
-                                                onClick={() => handleApplyPreset(p)}
-                                                style={{ fontSize: "0.78rem" }}
-                                            >
-                                                {p.role}
-                                            </button>
-                                        ))}
-                                    </div>
+            {/* Top Sub-panel Switcher Tabs */}
+            <div style={{ display: "flex", gap: "12px", borderBottom: "1px solid #e5e7eb", marginBottom: "24px" }}>
+                <button
+                    type="button"
+                    onClick={() => setActiveTool("pdf")}
+                    style={{
+                        padding: "10px 18px",
+                        fontSize: "14px",
+                        fontWeight: "700",
+                        backgroundColor: "transparent",
+                        border: "none",
+                        borderBottom: activeTool === "pdf" ? "2.5px solid #111827" : "2.5px solid transparent",
+                        color: activeTool === "pdf" ? "#111827" : "#6b7280",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px"
+                    }}
+                >
+                    <span>📄</span> PDF Document Analyser
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTool("jd")}
+                    style={{
+                        padding: "10px 18px",
+                        fontSize: "14px",
+                        fontWeight: "700",
+                        backgroundColor: "transparent",
+                        border: "none",
+                        borderBottom: activeTool === "jd" ? "2.5px solid #111827" : "2.5px solid transparent",
+                        color: activeTool === "jd" ? "#111827" : "#6b7280",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px"
+                    }}
+                >
+                    <span>💼</span> Job Description Analyser
+                </button>
+            </div>
+
+            {/* TOOL 1: PDF Document Analyser */}
+            {activeTool === "pdf" && (
+                <div className="wf-card" style={{ marginBottom: "28px" }}>
+                    {pdfStage === 1 ? (
+                        /* Step 1: Upload Document */
+                        <div>
+                            <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
+                                Upload Study Material, Syllabus, or Reference Book
+                            </h2>
+                            <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 20px 0" }}>
+                                Extracts genuine chapters, topics, and domain context using smart sampling and OCR fallback.
+                            </p>
+
+                            <div
+                                style={{
+                                    border: "2px dashed #cbd5e1",
+                                    borderRadius: "10px",
+                                    padding: "36px 20px",
+                                    textAlign: "center",
+                                    backgroundColor: "#f8fafc",
+                                    cursor: "pointer",
+                                    marginBottom: "20px"
+                                }}
+                                onClick={() => document.getElementById("admin-pdf-input").click()}
+                            >
+                                <input
+                                    id="admin-pdf-input"
+                                    type="file"
+                                    accept=".pdf"
+                                    style={{ display: "none" }}
+                                    onChange={(e) => handlePdfFileSelect(e.target.files?.[0])}
+                                />
+                                <div style={{ fontSize: "32px", marginBottom: "8px" }}>📄</div>
+                                <div style={{ fontSize: "14px", fontWeight: "600", color: "#111827", marginBottom: "4px" }}>
+                                    {pdfFileName ? pdfFileName : "Click to select PDF or drag and drop here"}
                                 </div>
-
-                                <div className="mb-3">
-                                    <label className="form-label text-secondary small fw-semibold">Target Role</label>
-                                    <input
-                                        type="text"
-                                        className="form-control form-control-custom"
-                                        value={role}
-                                        onChange={(e) => setRole(e.target.value)}
-                                        placeholder="e.g. Backend Developer"
-                                    />
+                                <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                                    Supports textbooks, research papers, syllabus PDFs, and lecture slides
                                 </div>
+                            </div>
 
-                                <div className="mb-3">
-                                    <label className="form-label text-secondary small fw-semibold">Domain / Tech Stack</label>
-                                    <input
-                                        type="text"
-                                        className="form-control form-control-custom"
-                                        value={domain}
-                                        onChange={(e) => setDomain(e.target.value)}
-                                        placeholder="e.g. Node.js & PostgreSQL"
-                                    />
+                            {pdfProgressText && (
+                                <div style={{ padding: "12px 16px", backgroundColor: "#eff6ff", borderRadius: "8px", color: "#1e40af", fontSize: "13px", fontWeight: "600", marginBottom: "16px", textAlign: "center" }}>
+                                    ⏳ {pdfProgressText}
                                 </div>
+                            )}
 
-                                <div className="row g-2 mb-3">
-                                    <div className="col-6">
-                                        <label className="form-label text-secondary small fw-semibold">Difficulty</label>
-                                        <select
-                                            className="form-select form-control-custom"
-                                            value={difficulty}
-                                            onChange={(e) => setDifficulty(e.target.value)}
-                                        >
-                                            <option value="easy">Easy</option>
-                                            <option value="medium">Medium</option>
-                                            <option value="hard">Hard</option>
-                                        </select>
-                                    </div>
-                                    <div className="col-6">
-                                        <label className="form-label text-secondary small fw-semibold">Question Count</label>
-                                        <select
-                                            className="form-select form-control-custom"
-                                            value={numQuestions}
-                                            onChange={(e) => setNumQuestions(e.target.value)}
-                                        >
-                                            <option value={3}>3 Questions</option>
-                                            <option value={5}>5 Questions</option>
-                                            <option value={10}>10 Questions</option>
-                                        </select>
-                                    </div>
-                                </div>
-
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
                                 <button
-                                    className="btn btn-primary-gradient w-100 py-2 mt-2"
-                                    onClick={generateQuestions}
-                                    disabled={loading}
+                                    type="button"
+                                    disabled={!pdfFile || pdfAnalyzing}
+                                    onClick={handleAnalyzePdf}
+                                    className="wf-btn-primary"
+                                    style={{ padding: "10px 24px", fontSize: "14px" }}
                                 >
-                                    {loading ? (
-                                        <>
-                                            <span className="spinner-border spinner-border-sm me-2" role="status" />
-                                            Generating AI Questions...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <SparklesIcon size={16} /> Generate Questions
-                                        </>
-                                    )}
+                                    {pdfAnalyzing ? "Analyzing Document..." : "Analyze Document →"}
                                 </button>
                             </div>
-                        )}
-
-                        {/* TAB 2: ADAPTIVE PDF ASSIMILATION */}
-                        {mode === "pdf" && (
-                            <div className="glass-card p-4">
-                                <h4 className="fw-bold text-white mb-2">Adaptive PDF Ingestion</h4>
-                                <p className="text-muted small mb-3">
-                                    Upload any technical PDF (resume, chapter, cheat sheet, documentation) to extract topic modules and generate targeted questions.
-                                </p>
-
-                                {/* Phase 1: Upload & Extract */}
-                                <div className="p-3 rounded-3 mb-3 border border-secondary border-opacity-25" style={{ background: "rgba(15, 23, 42, 0.4)" }}>
-                                    <label className="form-label text-secondary small fw-semibold">1. Upload Technical Document</label>
-                                    <input
-                                        type="file"
-                                        accept=".pdf"
-                                        className="form-control form-control-custom mb-3"
-                                        onChange={(e) => setPdfFile(e.target.files[0])}
-                                    />
-                                    <button
-                                        className="btn btn-secondary-dark w-100 py-2 text-indigo-300"
-                                        onClick={handleAnalyzePdf}
-                                        disabled={pdfAnalysisLoading || !pdfFile}
-                                    >
-                                        {pdfAnalysisLoading ? (
-                                            <>
-                                                <span className="spinner-border spinner-border-sm me-2" />
-                                                Assimilating Document...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <BrainIcon size={16} /> Assimilate & Extract Topics
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-
-                                {/* Phase 2: Parameters */}
-                                {pdfDigest && (
-                                    <div className="mt-3">
-                                        <label className="form-label text-secondary small fw-semibold">2. Configure Generation Parameters</label>
-                                        <div className="mb-2">
-                                            <input
-                                                type="text"
-                                                className="form-control form-control-custom mb-2"
-                                                placeholder="Target Role (e.g. Backend Engineer)"
-                                                value={pdfTargetRole}
-                                                onChange={(e) => setPdfTargetRole(e.target.value)}
-                                            />
-                                        </div>
-
-                                        <div className="row g-2 mb-2">
-                                            <div className="col-6">
-                                                <select
-                                                    className="form-select form-control-custom"
-                                                    value={pdfAssessmentType}
-                                                    onChange={(e) => setPdfAssessmentType(e.target.value)}
-                                                >
-                                                    <option value="theory">Theory Questions</option>
-                                                    <option value="coding">Coding Problems</option>
-                                                    <option value="mixed">Mixed (Both)</option>
-                                                </select>
-                                            </div>
-                                            <div className="col-6">
-                                                <select
-                                                    className="form-select form-control-custom"
-                                                    value={pdfTargetDifficulty}
-                                                    onChange={(e) => setPdfTargetDifficulty(e.target.value)}
-                                                >
-                                                    <option value="easy">Easy</option>
-                                                    <option value="medium">Medium</option>
-                                                    <option value="hard">Hard</option>
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div className="mb-3">
-                                            <input
-                                                type="text"
-                                                className="form-control form-control-custom"
-                                                placeholder="Custom Focus (e.g. Focus on edge cases & concurrency)"
-                                                value={pdfCustomPrompt}
-                                                onChange={(e) => setPdfCustomPrompt(e.target.value)}
-                                            />
-                                        </div>
-
-                                        <button
-                                            className="btn btn-primary-gradient w-100 py-2"
-                                            onClick={handleGenerateFromTopics}
-                                            disabled={loading || selectedTopics.length === 0}
-                                        >
-                                            {loading ? (
-                                                <>
-                                                    <span className="spinner-border spinner-border-sm me-2" />
-                                                    Generating Targeted Questions...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <SparklesIcon size={16} /> Generate Questions from Selected Topics ({selectedTopics.length})
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* TAB 3: JOB DESCRIPTION ANALYZER */}
-                        {mode === "jd" && (
-                            <div className="glass-card p-4">
-                                <h4 className="fw-bold text-white mb-2">Job Description (JD) Analyzer</h4>
-                                <p className="text-muted small mb-3">
-                                    Paste a Job Description or upload a job spec. The AI engine will extract competencies, auto-generate calibrated questions, save them to the Question Bank, and let you attempt them immediately.
-                                </p>
-
-                                <div className="mb-3">
-                                    <label className="form-label text-secondary small fw-semibold">Paste Job Description Text</label>
-                                    <textarea
-                                        className="form-control form-control-custom"
-                                        rows="6"
-                                        placeholder="Paste full Job Description here (Requirements, Responsibilities, Tech Stack)..."
-                                        value={jdText}
-                                        onChange={(e) => setJdText(e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="mb-3">
-                                    <label className="form-label text-secondary small fw-semibold">Or Upload JD Document</label>
-                                    <input
-                                        type="file"
-                                        accept=".txt,.pdf,.docx"
-                                        className="form-control form-control-custom"
-                                        onChange={(e) => setJdFile(e.target.files[0])}
-                                    />
-                                </div>
-
-                                <div className="row g-2 mb-3">
-                                    <div className="col-6">
-                                        <label className="form-label text-secondary small fw-semibold">Assessment Type</label>
-                                        <select
-                                            className="form-select form-control-custom"
-                                            value={jdAssessmentType}
-                                            onChange={(e) => setJdAssessmentType(e.target.value)}
-                                        >
-                                            <option value="mixed">Mixed (Coding + Theory)</option>
-                                            <option value="theory">Theory Only</option>
-                                            <option value="coding">Coding Only</option>
-                                        </select>
-                                    </div>
-                                    <div className="col-6">
-                                        <label className="form-label text-secondary small fw-semibold">Count</label>
-                                        <select
-                                            className="form-select form-control-custom"
-                                            value={jdNumQuestions}
-                                            onChange={(e) => setJdNumQuestions(e.target.value)}
-                                        >
-                                            <option value={3}>3 Questions</option>
-                                            <option value={5}>5 Questions</option>
-                                            <option value={8}>8 Questions</option>
-                                        </select>
+                        </div>
+                    ) : (
+                        /* Step 2: Review Topics & Configure */
+                        <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                                <div>
+                                    <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 4px 0" }}>
+                                        Extracted Document Structure
+                                    </h2>
+                                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                                        Document: <strong>{pdfFileName}</strong> · {pdfTotalPages} pages · Detected domain: <strong style={{ color: "#2563eb" }}>{detectedDomain}</strong>
                                     </div>
                                 </div>
-
                                 <button
-                                    className="btn btn-primary-gradient w-100 py-2"
-                                    onClick={handleAnalyzeJD}
-                                    disabled={jdLoading || (!jdText.trim() && !jdFile)}
+                                    type="button"
+                                    onClick={() => setPdfStage(1)}
+                                    className="wf-btn-outline"
+                                    style={{ fontSize: "12px", padding: "6px 12px" }}
                                 >
-                                    {jdLoading ? (
-                                        <>
-                                            <span className="spinner-border spinner-border-sm me-2" />
-                                            Analyzing JD & Generating Questions...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ZapIcon size={16} /> Ingest JD & Build Assessment
-                                        </>
-                                    )}
+                                    Change Document
                                 </button>
                             </div>
-                        )}
-                    </div>
 
-                    {/* Right Results & Interactive Workspace Area */}
-                    <div className="col-lg-7">
-                        {/* PDF Knowledge Assimilation Cards View */}
-                        {mode === "pdf" && pdfDigest && (
-                            <div className="glass-card p-4 mb-4">
-                                <div className="d-flex justify-content-between align-items-center mb-3">
-                                    <div className="d-flex align-items-center gap-2">
-                                        <SparklesIcon size={18} className="text-cyan-400" />
-                                        <h5 className="fw-bold text-white mb-0">Assimilated Document Digest</h5>
-                                    </div>
-                                    <span className="badge-tech badge-cyan">{pdfDigest.totalPages} Pages Analyzed</span>
+                            {pdfSummary && (
+                                <div style={{ padding: "12px 16px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "13px", color: "#334155", lineHeight: "1.5", marginBottom: "20px" }}>
+                                    <strong>Document Overview:</strong> {pdfSummary}
                                 </div>
-                                <p className="text-muted small mb-3 p-3 rounded-3" style={{ background: "rgba(255,255,255,0.03)" }}>
-                                    {pdfDigest.summary}
-                                </p>
+                            )}
 
-                                <h6 className="fw-semibold text-secondary small text-uppercase mb-2">
-                                    Extracted Topics (Click to select for Question Generation):
-                                </h6>
-
-                                <div className="d-flex flex-column gap-2 mb-2">
-                                    {pdfDigest.topics?.map((topic, i) => {
-                                        const isSelected = selectedTopics.includes(topic.name);
+                            {/* Selectable Topic Chips */}
+                            <div style={{ marginBottom: "20px" }}>
+                                <div style={{ fontSize: "12px", fontWeight: "700", color: "#475569", textTransform: "uppercase", marginBottom: "8px" }}>
+                                    Select Topics for Question Synthesis ({selectedTopics.length} selected)
+                                </div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
+                                    {extractedTopics.map((topic, idx) => {
+                                        const isSelected = selectedTopics.includes(topic);
                                         return (
-                                            <div
-                                                key={i}
-                                                onClick={() => toggleTopicSelection(topic.name)}
-                                                className={`p-3 rounded-3 cursor-pointer transition-all ${
-                                                    isSelected ? "border-indigo-500" : "border-secondary border-opacity-25"
-                                                }`}
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() => toggleTopic(topic)}
                                                 style={{
-                                                    background: isSelected ? "rgba(99, 102, 241, 0.12)" : "rgba(15, 23, 42, 0.4)",
-                                                    border: "1px solid",
-                                                    cursor: "pointer"
+                                                    padding: "6px 14px",
+                                                    borderRadius: "20px",
+                                                    fontSize: "12px",
+                                                    fontWeight: "600",
+                                                    border: isSelected ? "1.5px solid #2563eb" : "1px solid #cbd5e1",
+                                                    backgroundColor: isSelected ? "#eff6ff" : "#ffffff",
+                                                    color: isSelected ? "#1d4ed8" : "#475569",
+                                                    cursor: "pointer",
+                                                    transition: "all 0.1s ease"
                                                 }}
                                             >
-                                                <div className="d-flex justify-content-between align-items-center mb-1">
-                                                    <div className="d-flex align-items-center gap-2">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="form-check-input mt-0"
-                                                            checked={isSelected}
-                                                            onChange={() => {}}
-                                                        />
-                                                        <strong className="text-white small">{topic.name}</strong>
-                                                    </div>
-                                                    <span className="badge-tech badge-pending" style={{ fontSize: "0.7rem" }}>
-                                                        {topic.difficulty || "medium"}
-                                                    </span>
-                                                </div>
-                                                <p className="text-muted mb-2 ms-4" style={{ fontSize: "0.8rem" }}>
-                                                    {topic.description}
-                                                </p>
-                                                {topic.keywords && (
-                                                    <div className="d-flex flex-wrap gap-1 ms-4">
-                                                        {topic.keywords.map((kw, ki) => (
-                                                            <span key={ki} className="badge bg-dark text-muted border border-secondary border-opacity-25" style={{ fontSize: "0.68rem" }}>
-                                                                #{kw}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
+                                                {isSelected ? "✓ " : "+ "}{topic}
+                                            </button>
                                         );
                                     })}
                                 </div>
-                            </div>
-                        )}
 
-                        {/* JD Analysis Result Profile & Action Hub */}
-                        {mode === "jd" && jdAnalysisResult && (
-                            <div className="glass-card p-4 mb-4 border border-emerald-500 border-opacity-30">
-                                <div className="d-flex justify-content-between align-items-start mb-3">
-                                    <div>
-                                        <span className="badge-tech badge-emerald mb-2">🎯 JD Ingestion Complete</span>
-                                        <h4 className="fw-bold text-white mb-1">{jdAnalysisResult.roleTitle}</h4>
-                                        <p className="text-muted small mb-0">Seniority: <strong>{jdAnalysisResult.seniority || "Mid/Senior"}</strong> • Domain: <strong>{jdAnalysisResult.primaryDomain}</strong></p>
-                                    </div>
-                                </div>
-
-                                <p className="text-muted small p-3 rounded-3 mb-3" style={{ background: "rgba(16, 185, 129, 0.05)" }}>
-                                    {jdAnalysisResult.summary}
-                                </p>
-
-                                <div className="mb-4">
-                                    <span className="text-secondary small fw-semibold d-block mb-2">Detected Tech Stack:</span>
-                                    <div className="d-flex flex-wrap gap-2">
-                                        {jdAnalysisResult.techStack?.map((skill, si) => (
-                                            <span key={si} className="badge-tech badge-indigo">
-                                                {skill}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Action Hub */}
-                                <div className="p-3 rounded-3" style={{ background: "rgba(99, 102, 241, 0.08)", border: "1px solid rgba(99, 102, 241, 0.25)" }}>
-                                    <div className="d-flex justify-content-between align-items-center mb-2">
-                                        <h6 className="fw-bold text-white mb-0">⚡ Instant Assessment Action Hub</h6>
-                                        <span className="badge-tech badge-cyan">{questions.length} Questions Ready</span>
-                                    </div>
-                                    <p className="text-muted small mb-3">
-                                        Questions have been cataloged into the <strong>{jdAnalysisResult.roleTitle}</strong> Question Bank folder. You can immediately enter the test room or start an adaptive exam:
-                                    </p>
-                                    <div className="d-flex flex-wrap gap-2">
-                                        <button
-                                            type="button"
-                                            className="btn btn-primary-gradient btn-sm fw-semibold"
-                                            disabled={launchingTest || questions.length === 0}
-                                            onClick={() => handleLaunchDirectInterview(jdAnalysisResult.roleTitle, jdAnalysisResult.primaryDomain, questions)}
-                                        >
-                                            {launchingTest ? (
-                                                <>
-                                                    <span className="spinner-border spinner-border-sm me-2" />
-                                                    Starting Session...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    🚀 Start Interview With These {questions.length} Questions Now
-                                                </>
-                                            )}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary-dark btn-sm text-amber-300"
-                                            disabled={launchingTest}
-                                            onClick={() => handleLaunchDirectAdaptive(jdAnalysisResult.roleTitle, jdAnalysisResult.primaryDomain)}
-                                        >
-                                            ⚡ Take Adaptive Exam
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary-dark btn-sm text-cyan-300"
-                                            onClick={() => navigate("/questionbank", { state: { activeRole: jdAnalysisResult.roleTitle } })}
-                                        >
-                                            📂 View in Question Bank ({jdAnalysisResult.roleTitle})
-                                        </button>
-                                    </div>
+                                {/* Custom Topic Input */}
+                                <div style={{ display: "flex", gap: "8px", maxWidth: "400px" }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Add custom topic..."
+                                        value={customTopicInput}
+                                        onChange={(e) => setCustomTopicInput(e.target.value)}
+                                        onKeyDown={handleAddCustomTopic}
+                                        className="wf-input"
+                                        style={{ fontSize: "12px", padding: "6px 10px" }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleAddCustomTopic}
+                                        className="wf-btn-outline"
+                                        style={{ fontSize: "12px", padding: "6px 12px" }}
+                                    >
+                                        Add
+                                    </button>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Generated Questions List */}
-                        <div className="glass-card p-4">
-                            <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-3">
+                            {/* Question Generation Configuration */}
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", padding: "18px", backgroundColor: "#f9fafb", borderRadius: "10px", marginBottom: "20px" }}>
                                 <div>
-                                    <h5 className="fw-bold text-white mb-0">Generated Questions Preview ({questions.length})</h5>
-                                    <span className="text-muted small">All questions are saved to your Question Bank</span>
+                                    <label className="wf-form-label">Role Track Destination</label>
+                                    <select
+                                        value={pdfRole}
+                                        onChange={(e) => setPdfRole(e.target.value)}
+                                        className="wf-input"
+                                        style={{ backgroundColor: "#ffffff" }}
+                                    >
+                                        {rolesList.map(r => (
+                                            <option key={r._id || r.title} value={r.title}>{r.title}</option>
+                                        ))}
+                                    </select>
                                 </div>
-                                {questions.length > 0 && (
-                                    <div className="d-flex gap-2">
-                                        <button
-                                            type="button"
-                                            className="btn btn-primary-gradient btn-sm"
-                                            disabled={launchingTest}
-                                            onClick={() => handleLaunchDirectInterview(
-                                                mode === "jd" ? jdAnalysisResult?.roleTitle : (mode === "pdf" ? pdfTargetRole : role),
-                                                mode === "jd" ? jdAnalysisResult?.primaryDomain : (mode === "pdf" ? selectedTopics.join(", ") : domain),
-                                                questions
-                                            )}
-                                        >
-                                            🚀 Start Test Now
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary-dark btn-sm text-indigo-400"
-                                            onClick={() => navigate("/questionbank", {
-                                                state: { activeRole: mode === "jd" ? jdAnalysisResult?.roleTitle : (mode === "pdf" ? pdfTargetRole : role) }
-                                            })}
-                                        >
-                                            Open Bank <ArrowRightIcon size={14} />
-                                        </button>
-                                    </div>
-                                )}
+
+                                <div>
+                                    <label className="wf-form-label">Difficulty Target</label>
+                                    <select
+                                        value={pdfDifficulty}
+                                        onChange={(e) => setPdfDifficulty(e.target.value)}
+                                        className="wf-input"
+                                        style={{ backgroundColor: "#ffffff" }}
+                                    >
+                                        <option value="easy">Easy (Foundational)</option>
+                                        <option value="medium">Medium (Standard)</option>
+                                        <option value="hard">Hard (Advanced)</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="wf-form-label">Total Questions to Synthesize</label>
+                                    <select
+                                        value={pdfCount}
+                                        onChange={(e) => setPdfCount(e.target.value)}
+                                        className="wf-input"
+                                        style={{ backgroundColor: "#ffffff" }}
+                                    >
+                                        <option value={3}>3 Questions</option>
+                                        <option value={5}>5 Questions</option>
+                                        <option value={8}>8 Questions</option>
+                                        <option value={10}>10 Questions</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="wf-form-label">Assessment Format</label>
+                                    <select
+                                        value={pdfFormat}
+                                        onChange={(e) => setPdfFormat(e.target.value)}
+                                        className="wf-input"
+                                        style={{ backgroundColor: "#ffffff" }}
+                                    >
+                                        <option value="theory">Theory Concepts</option>
+                                        <option value="coding">Practical / Coding</option>
+                                        <option value="mixed">Mixed Assessment</option>
+                                    </select>
+                                </div>
                             </div>
 
-                            {questions.length === 0 ? (
-                                <div className="p-5 text-center text-muted">
-                                    <SparklesIcon size={40} className="text-secondary opacity-50 mb-3" />
-                                    <p className="mb-0">No questions generated yet. Choose a mode on the left and trigger generation.</p>
+                            {pdfProgressText && (
+                                <div style={{ padding: "12px 16px", backgroundColor: "#eff6ff", borderRadius: "8px", color: "#1e40af", fontSize: "13px", fontWeight: "600", marginBottom: "16px", textAlign: "center" }}>
+                                    ⏳ {pdfProgressText}
                                 </div>
-                            ) : (
-                                <div className="d-flex flex-column gap-3">
-                                    {questions.map((q, idx) => {
-                                        const isApproved = approvedMap[q._id || idx] || q.status === "approved";
-                                        const isCoding = q.assessmentType === "coding" || q.type === "coding";
+                            )}
 
-                                        return (
-                                            <div key={q._id || idx} className="p-3 rounded-3 border border-secondary border-opacity-25" style={{ background: "rgba(15, 23, 42, 0.5)" }}>
-                                                <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
-                                                    <div className="d-flex align-items-center gap-2">
-                                                        <span className="badge-tech badge-cyan">Q{idx + 1}</span>
-                                                        <span className={`badge-tech ${isCoding ? "badge-indigo" : "badge-emerald"}`} style={{ fontSize: "0.72rem" }}>
-                                                            {isCoding ? "Coding" : "Theory"}
-                                                        </span>
-                                                        <span className="badge-tech badge-pending" style={{ fontSize: "0.72rem" }}>
-                                                            {q.difficulty || "medium"}
-                                                        </span>
-                                                    </div>
-                                                    {isApproved ? (
-                                                        <span className="badge-tech badge-approved">
-                                                            <CheckIcon size={12} /> Active in Bank
-                                                        </span>
-                                                    ) : (
-                                                        <button
-                                                            className="btn btn-sm btn-secondary-dark text-emerald-400"
-                                                            onClick={() => handleApproveInline(q._id, idx)}
-                                                            style={{ fontSize: "0.78rem" }}
-                                                        >
-                                                            Approve Question
-                                                        </button>
-                                                    )}
-                                                </div>
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                                <button
+                                    type="button"
+                                    disabled={generatingPdfQuestions}
+                                    onClick={handleGenerateFromPdfTopics}
+                                    className="wf-btn-primary"
+                                    style={{ padding: "10px 24px", fontSize: "14px" }}
+                                >
+                                    {generatingPdfQuestions ? "Generating Questions..." : "Generate Calibrated Questions →"}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
-                                                <h6 className="text-white fw-semibold mb-2">{q.questionText}</h6>
+            {/* TOOL 2: Job Description Analyser */}
+            {activeTool === "jd" && (
+                <div className="wf-card" style={{ marginBottom: "28px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                            Analyse Job Description & Generate Tailored Questions
+                        </h2>
+                        <button
+                            type="button"
+                            onClick={loadSampleJd}
+                            style={{ background: "none", border: "none", color: "#2563eb", fontSize: "12px", fontWeight: "600", cursor: "pointer", textDecoration: "underline" }}
+                        >
+                            Load sample JD
+                        </button>
+                    </div>
+                    <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 16px 0" }}>
+                        Paste a job posting or requisitions brief to extract technical competencies, target seniority, and generate role-tailored questions.
+                    </p>
 
-                                                {q.idealAnswer && (
-                                                    <div className="p-2 rounded bg-dark bg-opacity-50 text-muted small font-monospace mb-2" style={{ fontSize: "0.8rem" }}>
-                                                        <strong className="text-secondary d-block">Model Answer / Criteria:</strong>
-                                                        {q.idealAnswer.slice(0, 180)}...
-                                                    </div>
-                                                )}
+                    <div style={{ marginBottom: "16px" }}>
+                        <textarea
+                            value={jdText}
+                            onChange={(e) => setJdText(e.target.value)}
+                            placeholder="Paste job description text here..."
+                            rows={6}
+                            className="wf-input"
+                            style={{ fontFamily: "inherit", lineHeight: "1.5" }}
+                        />
+                    </div>
 
-                                                {q.keypoint && q.keypoint.length > 0 && (
-                                                    <div className="d-flex flex-wrap gap-1">
-                                                        {q.keypoint.map((kp, kpi) => (
-                                                            <span key={kpi} className="badge bg-secondary bg-opacity-25 text-light" style={{ fontSize: "0.68rem" }}>
-                                                                ✓ {kp}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                    {/* Configuration Row */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", padding: "16px", backgroundColor: "#f9fafb", borderRadius: "8px", marginBottom: "16px" }}>
+                        <div>
+                            <label className="wf-form-label">Question Count</label>
+                            <select
+                                value={jdCount}
+                                onChange={(e) => setJdCount(e.target.value)}
+                                className="wf-input"
+                                style={{ backgroundColor: "#ffffff" }}
+                            >
+                                <option value={3}>3 questions</option>
+                                <option value={5}>5 questions</option>
+                                <option value={8}>8 questions</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="wf-form-label">Target Difficulty</label>
+                            <select
+                                value={jdDifficulty}
+                                onChange={(e) => setJdDifficulty(e.target.value)}
+                                className="wf-input"
+                                style={{ backgroundColor: "#ffffff" }}
+                            >
+                                <option value="easy">Junior / Easy</option>
+                                <option value="medium">Mid-level / Medium</option>
+                                <option value="hard">Senior / Hard</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="wf-form-label">Assessment Format</label>
+                            <select
+                                value={jdFormat}
+                                onChange={(e) => setJdFormat(e.target.value)}
+                                className="wf-input"
+                                style={{ backgroundColor: "#ffffff" }}
+                            >
+                                <option value="mixed">Mixed (Theory + Code)</option>
+                                <option value="theory">Theory Concepts</option>
+                                <option value="coding">Coding Tasks</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {jdProgressText && (
+                        <div style={{ padding: "12px 16px", backgroundColor: "#eff6ff", borderRadius: "8px", color: "#1e40af", fontSize: "13px", fontWeight: "600", marginBottom: "16px", textAlign: "center" }}>
+                            ⏳ {jdProgressText}
+                        </div>
+                    )}
+
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button
+                            type="button"
+                            disabled={jdAnalyzing || !jdText.trim()}
+                            onClick={handleAnalyzeJd}
+                            className="wf-btn-primary"
+                            style={{ padding: "10px 24px", fontSize: "14px" }}
+                        >
+                            {jdAnalyzing ? "Analyzing JD..." : "Analyze JD & Generate Questions →"}
+                        </button>
+                    </div>
+
+                    {/* Extracted JD Metadata Card */}
+                    {jdAnalysisData && (
+                        <div style={{ marginTop: "24px", padding: "16px", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px" }}>
+                            <div style={{ fontSize: "12px", fontWeight: "700", color: "#166534", textTransform: "uppercase", marginBottom: "8px" }}>
+                                Extracted Competency Matrix
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "13px", color: "#1f2937", marginBottom: "10px" }}>
+                                <div><strong>Target Role:</strong> {jdAnalysisData.roleTitle}</div>
+                                <div><strong>Seniority:</strong> {jdAnalysisData.seniority}</div>
+                                <div><strong>Primary Domain:</strong> {jdAnalysisData.primaryDomain}</div>
+                            </div>
+                            {jdAnalysisData.techStack && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+                                    {jdAnalysisData.techStack.map((tech, idx) => (
+                                        <span key={idx} style={{ backgroundColor: "#dcfce7", color: "#14532d", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "600" }}>
+                                            {tech}
+                                        </span>
+                                    ))}
                                 </div>
                             )}
                         </div>
+                    )}
+                </div>
+            )}
+
+            {/* REVIEW QUEUE (Generated Questions from PDF or JD) */}
+            <div className="wf-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+                    <div>
+                        <h2 style={{ fontSize: "17px", fontWeight: "700", color: "#111827", margin: "0 0 4px 0" }}>
+                            Generated Questions Review Queue ({reviewQueue.length})
+                        </h2>
+                        <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>
+                            Review, calibrate, or approve synthesized questions before publishing to candidate assessments.
+                        </p>
+                    </div>
+
+                    {reviewQueue.length > 0 && (
+                        <div style={{ display: "flex", gap: "10px" }}>
+                            <button
+                                type="button"
+                                disabled={approvingAll}
+                                onClick={handleApproveAll}
+                                style={{
+                                    padding: "8px 16px",
+                                    backgroundColor: "#059669",
+                                    color: "#ffffff",
+                                    border: "none",
+                                    borderRadius: "8px",
+                                    fontSize: "13px",
+                                    fontWeight: "600",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                {approvingAll ? "Approving..." : "✓ Approve All Questions"}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {reviewQueue.length === 0 ? (
+                    <div style={{ padding: "40px 20px", textAlign: "center", color: "#6b7280" }}>
+                        <div style={{ fontSize: "32px", marginBottom: "8px" }}>✨</div>
+                        <div style={{ fontSize: "14px", fontWeight: "700", color: "#111827", marginBottom: "4px" }}>
+                            Review Queue is Empty
+                        </div>
+                        <div style={{ fontSize: "12px" }}>
+                            Upload a PDF document or analyze a Job Description above to generate questions into this review queue.
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                        {reviewQueue.map((q, idx) => {
+                            const isApproved = q.status === "approved";
+                            const isRejected = q.status === "rejected";
+
+                            return (
+                                <div
+                                    key={q._id || idx}
+                                    style={{
+                                        padding: "18px",
+                                        borderRadius: "10px",
+                                        border: isApproved ? "1.5px solid #a7f3d0" : isRejected ? "1.5px solid #fecaca" : "1px solid #e5e7eb",
+                                        backgroundColor: isApproved ? "#f0fdf4" : isRejected ? "#fef2f2" : "#ffffff",
+                                        transition: "all 0.15s ease"
+                                    }}
+                                >
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                                            <span style={{
+                                                padding: "2px 8px",
+                                                borderRadius: "4px",
+                                                fontSize: "11px",
+                                                fontWeight: "700",
+                                                backgroundColor: isApproved ? "#dcfce7" : isRejected ? "#fee2e2" : "#fef3c7",
+                                                color: isApproved ? "#15803d" : isRejected ? "#b91c1c" : "#92400e"
+                                            }}>
+                                                {(q.status || "pending").toUpperCase()}
+                                            </span>
+                                            <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                                                {q.role} · {q.domain} · {q.difficulty.toUpperCase()} · {q.assessmentType || "Theory"}
+                                            </span>
+                                        </div>
+                                        <span style={{ fontSize: "11px", color: "#9ca3af", fontStyle: "italic" }}>
+                                            Source: {q.source || "AI Generated"}
+                                        </span>
+                                    </div>
+
+                                    <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#111827", margin: "0 0 10px 0", lineHeight: "1.4" }}>
+                                        {q.questionText}
+                                    </h3>
+
+                                    {q.idealAnswer && (
+                                        <div style={{ fontSize: "12px", color: "#4b5563", backgroundColor: "#ffffff", padding: "10px 12px", borderRadius: "6px", border: "1px solid #f3f4f6", marginBottom: "14px", lineHeight: "1.5" }}>
+                                            <strong>Ideal Answer:</strong> {q.idealAnswer}
+                                        </div>
+                                    )}
+
+                                    {/* Action Buttons: Approve, Reject, Edit, Discard */}
+                                    <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                                        {!isApproved && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleApproveQuestion(q)}
+                                                style={{
+                                                    padding: "6px 14px",
+                                                    backgroundColor: "#059669",
+                                                    color: "#ffffff",
+                                                    border: "none",
+                                                    borderRadius: "6px",
+                                                    fontSize: "12px",
+                                                    fontWeight: "600",
+                                                    cursor: "pointer"
+                                                }}
+                                            >
+                                                ✓ Approve
+                                            </button>
+                                        )}
+                                        {!isRejected && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRejectQuestion(q)}
+                                                style={{
+                                                    padding: "6px 14px",
+                                                    backgroundColor: "#d97706",
+                                                    color: "#ffffff",
+                                                    border: "none",
+                                                    borderRadius: "6px",
+                                                    fontSize: "12px",
+                                                    fontWeight: "600",
+                                                    cursor: "pointer"
+                                                }}
+                                            >
+                                                Reject
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleOpenEdit(q)}
+                                            className="wf-btn-outline"
+                                            style={{ padding: "6px 12px", fontSize: "12px" }}
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDiscardQuestion(q)}
+                                            style={{
+                                                padding: "6px 12px",
+                                                border: "1px solid #fecaca",
+                                                borderRadius: "6px",
+                                                backgroundColor: "#ffffff",
+                                                color: "#dc2626",
+                                                fontSize: "12px",
+                                                fontWeight: "600",
+                                                cursor: "pointer"
+                                            }}
+                                        >
+                                            Discard
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Edit Question Modal */}
+            {editModalOpen && editingQuestion && (
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1100,
+                    padding: "16px"
+                }}>
+                    <div className="wf-card" style={{ width: "520px", maxWidth: "100%", padding: "24px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                            <h2 style={{ fontSize: "17px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                                Edit Generated Question
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setEditModalOpen(false)}
+                                style={{ background: "none", border: "none", fontSize: "18px", color: "#9ca3af", cursor: "pointer" }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveEdit}>
+                            <div style={{ marginBottom: "14px" }}>
+                                <label className="wf-form-label">Question Text</label>
+                                <textarea
+                                    value={editingQuestion.questionText}
+                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, questionText: e.target.value })}
+                                    rows={3}
+                                    className="wf-input"
+                                    required
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: "14px" }}>
+                                <label className="wf-form-label">Ideal Reference Answer</label>
+                                <textarea
+                                    value={editingQuestion.idealAnswer || ""}
+                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, idealAnswer: e.target.value })}
+                                    rows={3}
+                                    className="wf-input"
+                                />
+                            </div>
+
+                            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setEditModalOpen(false)}
+                                    className="wf-btn-outline"
+                                    style={{ padding: "8px 16px" }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="wf-btn-primary"
+                                    style={{ padding: "8px 20px" }}
+                                >
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }
-
-export default AIGenerator;

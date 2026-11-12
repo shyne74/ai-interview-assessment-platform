@@ -8,7 +8,8 @@ import {
     AwardIcon,
     UserIcon,
     SparklesIcon,
-    BarChartIcon
+    BarChartIcon,
+    ShieldIcon
 } from "../components/icons";
 
 function AdminResults() {
@@ -141,9 +142,22 @@ function AdminResults() {
                                                     </div>
                                                 </div>
 
-                                                <span className={`badge-tech ${scoreBadge} fs-6 px-3 py-1`}>
-                                                    {score} / 10
-                                                </span>
+                                                <div className="d-flex flex-column align-items-end gap-1">
+                                                    <span className={`badge-tech ${scoreBadge} fs-6 px-3 py-1`}>
+                                                        {score} / 10
+                                                    </span>
+                                                    {(() => {
+                                                        const p = result.plagiarismReport || result.interviewId?.plagiarismSummary;
+                                                        if (!p) return null;
+                                                        const orig = p.overallOriginalityScore !== undefined ? p.overallOriginalityScore : (p.overallPlagiarismScore !== undefined ? 100 - p.overallPlagiarismScore : 100);
+                                                        const pBadge = orig >= 80 ? "badge-approved" : orig >= 60 ? "badge-pending" : "badge-rejected";
+                                                        return (
+                                                            <span className={`badge-tech ${pBadge}`} style={{ fontSize: "0.68rem" }}>
+                                                                🛡️ {orig}% Original
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
                                             </div>
 
                                             {/* Role & Domain */}
@@ -242,10 +256,34 @@ function AdminResults() {
                                 <button className="btn-close btn-close-white" onClick={() => setSelectedSubmission(null)} />
                             </div>
 
-                            {/* Overall Score Banner */}
-                            <div className="p-4 rounded-3 text-center mb-4" style={{ background: "rgba(99, 102, 241, 0.1)", border: "1px solid rgba(99, 102, 241, 0.3)" }}>
-                                <span className="text-muted small text-uppercase fw-semibold d-block mb-1">Overall AI Score</span>
-                                <h1 className="fw-bold text-white mb-0 display-4">{selectedSubmission.overallScore} / 10</h1>
+                            {/* Overall Score & Originality Banner */}
+                            <div className="row g-3 mb-4">
+                                <div className="col-md-6">
+                                    <div className="p-4 rounded-3 text-center h-100" style={{ background: "rgba(99, 102, 241, 0.1)", border: "1px solid rgba(99, 102, 241, 0.3)" }}>
+                                        <span className="text-muted small text-uppercase fw-semibold d-block mb-1">Overall AI Score</span>
+                                        <h1 className="fw-bold text-white mb-0 display-5">{selectedSubmission.overallScore} / 10</h1>
+                                    </div>
+                                </div>
+                                <div className="col-md-6">
+                                    {(() => {
+                                        const p = selectedSubmission.plagiarismReport || selectedSubmission.interviewId?.plagiarismSummary || {};
+                                        const orig = p.overallOriginalityScore !== undefined ? p.overallOriginalityScore : (p.overallPlagiarismScore !== undefined ? 100 - p.overallPlagiarismScore : 100);
+                                        const isClean = orig >= 80;
+                                        const isMod = orig >= 60 && orig < 80;
+                                        return (
+                                            <div className="p-4 rounded-3 text-center h-100" style={{ 
+                                                background: isClean ? "rgba(16, 185, 129, 0.1)" : isMod ? "rgba(245, 158, 11, 0.1)" : "rgba(239, 68, 68, 0.1)", 
+                                                border: `1px solid ${isClean ? "rgba(16, 185, 129, 0.3)" : isMod ? "rgba(245, 158, 11, 0.3)" : "rgba(239, 68, 68, 0.3)"}` 
+                                            }}>
+                                                <span className="text-muted small text-uppercase fw-semibold d-block mb-1">Originality Rating</span>
+                                                <h1 className={`fw-bold mb-0 display-5 ${isClean ? "text-emerald-400" : isMod ? "text-amber-400" : "text-rose-400"}`}>
+                                                    {orig}%
+                                                </h1>
+                                                <span className="small text-muted">{p.status || (isClean ? "Clean & Verified" : "Review Recommended")}</span>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
                             </div>
 
                             {/* AI Feedback */}
@@ -331,6 +369,26 @@ function AdminResults() {
                                                             <span>Typing Time: <strong>{Math.round(telemetry.typingDurationMs / 1000)}s</strong></span>
                                                         )}
                                                     </div>
+
+                                                    {/* Plagiarism & Originality Signal */}
+                                                    {(() => {
+                                                        const p = resp.plagiarismReport;
+                                                        if (!p) return null;
+                                                        const pScore = p.plagiarismScore || 0;
+                                                        const origScore = p.originalityScore !== undefined ? p.originalityScore : 100 - pScore;
+                                                        return (
+                                                            <div className="p-2 px-3 rounded-2 mb-2 d-flex justify-content-between align-items-center" style={{ background: pScore > 35 ? "rgba(239, 68, 68, 0.15)" : "rgba(16, 185, 129, 0.1)", border: `1px solid ${pScore > 35 ? "rgba(239, 68, 68, 0.3)" : "rgba(16, 185, 129, 0.2)"}` }}>
+                                                                <span className="small text-white">
+                                                                    🛡️ <strong>Originality:</strong> {origScore}% ({p.status || "Clean"})
+                                                                </span>
+                                                                {p.detectedSources && p.detectedSources.length > 0 && (
+                                                                    <span className="small text-rose-300">
+                                                                        Signals: {p.detectedSources.join(", ")}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
 
                                                     {/* Risk reasons */}
                                                     {reasons.length > 0 ? (

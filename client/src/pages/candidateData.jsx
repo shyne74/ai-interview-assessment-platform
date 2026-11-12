@@ -1,123 +1,175 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../utils/api";
 
 export default function CandidateData() {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState("attempts"); // "attempts" | "roster"
-    
-    // Attempts state
-    const [candidates, setCandidates] = useState([]);
-    const [loadingAttempts, setLoadingAttempts] = useState(true);
-    
-    // Candidate Accounts (Roster) state
-    const [roster, setRoster] = useState([]);
-    const [loadingRoster, setLoadingRoster] = useState(false);
 
-    // Filter & Search
+    // Data states
+    const [candidates, setCandidates] = useState([]);
+    const [results, setResults] = useState([]);
+    const [rolesList, setRolesList] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [actionToast, setActionToast] = useState("");
+
+    // Filtering, Search, Sort, Pagination
     const [searchTerm, setSearchTerm] = useState("");
-    const [riskFilter, setRiskFilter] = useState("all"); // "all" | "high" | "medium" | "low"
+    const [roleFilter, setRoleFilter] = useState("all");
+    const [integrityFilter, setIntegrityFilter] = useState("all");
+    const [sortBy, setSortBy] = useState("joined"); // "joined" | "name" | "score" | "attempts"
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 8;
+
+    // Detail Drawer state
+    const [selectedCandidate, setSelectedCandidate] = useState(null);
+    const [drawerOpen, setDrawerOpen] = useState(false);
 
     // Assign Assessment Modal state
     const [assignModalOpen, setAssignModalOpen] = useState(false);
-    const [selectedCandidate, setSelectedCandidate] = useState(null);
-    const [assignRole, setAssignRole] = useState("Frontend Developer");
-    const [assignDomain, setAssignDomain] = useState("React & JavaScript");
+    const [assignRole, setAssignRole] = useState("Backend Developer");
+    const [assignDomain, setAssignDomain] = useState("Node.js & Express");
+    const [assignType, setAssignType] = useState("theory");
+    const [assignDifficulty, setAssignDifficulty] = useState("medium");
     const [assignQuestions, setAssignQuestions] = useState("5");
     const [assignDuration, setAssignDuration] = useState("30");
     const [assigning, setAssigning] = useState(false);
-    const [actionToast, setActionToast] = useState("");
 
-    // Fetch assessment attempts
-    const fetchCandidateAttempts = async () => {
+    // Delete Confirmation Modal state
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [candidateToDelete, setCandidateToDelete] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+
+    // Fetch all required data
+    const fetchData = async () => {
+        setLoading(true);
+        setError("");
         try {
-            setLoadingAttempts(true);
-            const res = await api.get("/results/admin");
-            const raw = res.data.results || [];
-            const mapped = raw.map((r) => {
-                const dt = r.createdAt ? new Date(r.createdAt) : new Date();
-                const dateStr = dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
-                    ", " + dt.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-                
-                const name = r.candidateId?.username || r.candidateId?.email?.split("@")[0] || "Candidate";
-                const email = r.candidateId?.email || "";
-                const exam = `${r.roleTitle || "Technical"} · ${r.domain || "Screen"}`;
-                const score = typeof r.overallScore === "number" ? r.overallScore : 0;
-                const originalityScore = r.plagiarismReport?.overallOriginalityScore ?? 100;
-                
-                let risk = "Low";
-                const pStatus = (r.plagiarismReport?.status || "").toLowerCase();
-                const pRisk = (r.plagiarismReport?.riskLevel || "").toLowerCase();
-                if (pRisk === "high" || pStatus.includes("high")) risk = "High";
-                else if (pRisk === "medium" || pStatus.includes("moderate")) risk = "Medium";
+            const [candRes, resultsRes, rolesRes] = await Promise.allSettled([
+                api.get("/auth/candidates"),
+                api.get("/results/admin"),
+                api.get("/roles")
+            ]);
 
-                const flags = r.plagiarismReport?.flaggedCount || 0;
-                const interviewId = r.interviewId?._id || r.interviewId || r._id;
+            const rawCandidates = candRes.status === "fulfilled" ? candRes.value.data.candidates || [] : [];
+            const rawResults = resultsRes.status === "fulfilled" ? resultsRes.value.data.results || [] : [];
+            const rawRoles = rolesRes.status === "fulfilled" ? rolesRes.value.data.roles || [] : [];
 
-                return {
-                    id: interviewId,
-                    date: dateStr,
-                    name,
-                    email,
-                    exam,
-                    score,
-                    originality: `${originalityScore}%`,
-                    risk,
-                    anomalies: `${flags} flags open`
-                };
-            });
-            setCandidates(mapped);
+            setCandidates(rawCandidates);
+            setResults(rawResults);
+            setRolesList(rawRoles);
+
+            if (rawRoles.length > 0) {
+                setAssignRole(rawRoles[0].title);
+                setAssignDomain(rawRoles[0].domains?.[0] || "General Technical");
+            }
         } catch (err) {
-            console.error("Failed to load candidate reports:", err);
+            console.error("Failed to load candidate management data:", err);
+            setError("Failed to synchronize candidate records from server.");
         } finally {
-            setLoadingAttempts(false);
-        }
-    };
-
-    // Fetch registered candidate users
-    const fetchCandidateRoster = async () => {
-        try {
-            setLoadingRoster(true);
-            const res = await api.get("/auth/candidates");
-            const users = res.data.candidates || [];
-            setRoster(users);
-        } catch (err) {
-            console.error("Failed to load candidate roster:", err);
-        } finally {
-            setLoadingRoster(false);
+            setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchCandidateAttempts();
-        fetchCandidateRoster();
+        fetchData();
     }, []);
 
-    const handleDeleteCandidate = async (cand) => {
-        if (!window.confirm(`Are you sure you want to remove candidate account: ${cand.username} (${cand.email})?`)) {
-            return;
-        }
+    // Merge candidates with their attempt history
+    const mergedCandidates = useMemo(() => {
+        return candidates.map(cand => {
+            const candEmail = (cand.email || "").toLowerCase();
+            const candId = (cand._id || "").toString();
 
-        try {
-            await api.delete(`/auth/candidates/${cand._id}`);
-            setActionToast(`Candidate ${cand.username} removed successfully.`);
-            setRoster(prev => prev.filter(c => c._id !== cand._id));
-        } catch (err) {
-            console.error("Failed to delete candidate:", err);
-            setActionToast(`Error: ${err.response?.data?.message || err.message}`);
-        } finally {
-            setTimeout(() => setActionToast(""), 3500);
-        }
+            // Find all matching results for this candidate
+            const candAttempts = results.filter(r => {
+                const rCandId = r.candidateId?._id?.toString() || r.candidateId?.toString();
+                const rCandEmail = (r.candidateId?.email || "").toLowerCase();
+                return (rCandId && rCandId === candId) || (candEmail && rCandEmail === candEmail);
+            });
+
+            // Calculate metrics
+            const attemptCount = candAttempts.length;
+            const latestAttempt = candAttempts[0] || null;
+            const lastScore = latestAttempt ? (latestAttempt.overallScore ?? 0) : null;
+
+            // Determine highest integrity risk
+            let integrityStatus = "Clean";
+            if (candAttempts.length === 0) {
+                integrityStatus = "No attempts";
+            } else {
+                for (const att of candAttempts) {
+                    const plag = att.plagiarismReport || att.interviewId?.plagiarismSummary || {};
+                    const risk = (plag.riskLevel || plag.status || "").toLowerCase();
+                    const violations = att.interviewId?.violations?.length || 0;
+                    if (risk.includes("high") || violations >= 3) {
+                        integrityStatus = "High";
+                        break;
+                    } else if (risk.includes("medium") || risk.includes("moderate") || violations >= 1) {
+                        integrityStatus = "Medium";
+                    }
+                }
+            }
+
+            return {
+                ...cand,
+                attemptCount,
+                lastScore,
+                integrityStatus,
+                attempts: candAttempts,
+                joinedFormatted: cand.createdAt ? new Date(cand.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"
+            };
+        });
+    }, [candidates, results]);
+
+    // Filter, search, and sort
+    const filteredCandidates = useMemo(() => {
+        return mergedCandidates.filter(c => {
+            const search = searchTerm.toLowerCase();
+            const matchesSearch = !search ||
+                (c.username || "").toLowerCase().includes(search) ||
+                (c.email || "").toLowerCase().includes(search) ||
+                (c.preferredRole || "").toLowerCase().includes(search);
+
+            const matchesRole = roleFilter === "all" || (c.preferredRole || "").toLowerCase() === roleFilter.toLowerCase();
+            const matchesIntegrity = integrityFilter === "all" || c.integrityStatus.toLowerCase() === integrityFilter.toLowerCase();
+
+            return matchesSearch && matchesRole && matchesIntegrity;
+        }).sort((a, b) => {
+            if (sortBy === "name") return (a.username || "").localeCompare(b.username || "");
+            if (sortBy === "score") return (b.lastScore ?? -1) - (a.lastScore ?? -1);
+            if (sortBy === "attempts") return b.attemptCount - a.attemptCount;
+            // Default "joined"
+            return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        });
+    }, [mergedCandidates, searchTerm, roleFilter, integrityFilter, sortBy]);
+
+    // Pagination
+    const totalPages = Math.ceil(filteredCandidates.length / pageSize) || 1;
+    const paginatedCandidates = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredCandidates.slice(start, start + pageSize);
+    }, [filteredCandidates, currentPage]);
+
+    // Row click -> open drawer
+    const handleRowClick = (cand) => {
+        setSelectedCandidate(cand);
+        setDrawerOpen(true);
     };
 
-    const handleOpenAssignModal = (cand) => {
+    // Open assign modal for candidate
+    const handleOpenAssignModal = (cand, e) => {
+        if (e) e.stopPropagation();
         setSelectedCandidate(cand);
-        setAssignRole(cand.preferredRole || "Frontend Developer");
-        setAssignDomain(cand.preferredRole || "General Technical");
+        const preferred = cand.preferredRole || (rolesList[0]?.title || "Backend Developer");
+        setAssignRole(preferred);
+        const matchingRole = rolesList.find(r => r.title.toLowerCase() === preferred.toLowerCase());
+        setAssignDomain(matchingRole?.domains?.[0] || "General Technical");
         setAssignModalOpen(true);
     };
 
-    const handleAssignAssessmentSubmit = async (e) => {
+    // Submit assign assessment
+    const handleAssignSubmit = async (e) => {
         e.preventDefault();
         if (!selectedCandidate) return;
 
@@ -127,51 +179,56 @@ export default function CandidateData() {
                 candidateId: selectedCandidate._id,
                 roleTitle: assignRole,
                 domain: assignDomain,
-                assessmentType: "theory",
-                durationSeconds: parseInt(assignDuration, 10) * 60,
-                limit: parseInt(assignQuestions, 10)
+                assessmentType: assignType,
+                difficulty: assignDifficulty,
+                limit: parseInt(assignQuestions, 10),
+                durationSeconds: parseInt(assignDuration, 10) * 60
             };
 
             await api.post("/interviews/assign", payload);
-            setActionToast(`Assessment "${assignRole}" assigned to ${selectedCandidate.username} successfully.`);
+            setActionToast(`Assessment "${assignRole}" successfully assigned to ${selectedCandidate.username}.`);
             setAssignModalOpen(false);
-            fetchCandidateAttempts();
+            fetchData();
         } catch (err) {
-            console.error("Failed to assign assessment:", err);
-            setActionToast(`Error assigning assessment: ${err.response?.data?.message || err.message}`);
+            console.error("Assign error:", err);
+            setActionToast(`Error: ${err.response?.data?.message || "Failed to assign assessment"}`);
         } finally {
             setAssigning(false);
             setTimeout(() => setActionToast(""), 4000);
         }
     };
 
-    const getRiskPill = (risk) => {
-        if (risk === "Low") return "wf-pill wf-pill-green";
-        if (risk === "Medium") return "wf-pill wf-pill-yellow";
-        return "wf-pill wf-pill-red";
+    // Open delete confirmation modal
+    const handleOpenDeleteModal = (cand, e) => {
+        if (e) e.stopPropagation();
+        setCandidateToDelete(cand);
+        setDeleteModalOpen(true);
     };
 
-    // Filter attempts
-    const filteredAttempts = candidates.filter((c) => {
-        const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.exam.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        const matchesRisk = riskFilter === "all" || c.risk.toLowerCase() === riskFilter.toLowerCase();
-        return matchesSearch && matchesRisk;
-    });
-
-    // Filter roster
-    const filteredRoster = roster.filter((c) => {
-        const name = (c.username || "").toLowerCase();
-        const email = (c.email || "").toLowerCase();
-        const role = (c.preferredRole || "").toLowerCase();
-        const s = searchTerm.toLowerCase();
-        return name.includes(s) || email.includes(s) || role.includes(s);
-    });
+    // Confirm delete candidate
+    const handleConfirmDelete = async () => {
+        if (!candidateToDelete) return;
+        setDeleting(true);
+        try {
+            await api.delete(`/auth/candidates/${candidateToDelete._id}`);
+            setActionToast(`Candidate account ${candidateToDelete.username} removed.`);
+            setDeleteModalOpen(false);
+            if (selectedCandidate?._id === candidateToDelete._id) {
+                setDrawerOpen(false);
+            }
+            setCandidateToDelete(null);
+            fetchData();
+        } catch (err) {
+            console.error("Delete candidate error:", err);
+            setActionToast(`Error: ${err.response?.data?.message || "Could not remove candidate"}`);
+        } finally {
+            setDeleting(false);
+            setTimeout(() => setActionToast(""), 4000);
+        }
+    };
 
     return (
-        <div>
+        <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
             {/* Breadcrumb */}
             <div className="wf-breadcrumb">
                 <span>Admin</span>
@@ -179,19 +236,21 @@ export default function CandidateData() {
                 <span style={{ color: "#111827", fontWeight: "600" }}>Candidates</span>
             </div>
 
-            {/* Header + Add Candidate Action */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+            {/* Header + Actions */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
                 <div>
-                    <h1 className="wf-page-title" style={{ margin: "0 0 6px 0" }}>
-                        Candidates management
+                    <h1 className="wf-page-title" style={{ margin: "0 0 4px 0" }}>
+                        Candidates directory
                     </h1>
                     <p className="wf-page-subtitle" style={{ margin: 0 }}>
-                        Review candidate assessment attempts, integrity flags, and manage registered candidates.
+                        Review candidate profiles, assessment attempt history, integrity compliance, and assign customized tests.
                     </p>
                 </div>
-                <Link to="/admin/candidates/add" className="wf-btn-primary">
-                    + Add candidates
-                </Link>
+                <div style={{ display: "flex", gap: "10px" }}>
+                    <Link to="/admin/candidates/add" className="wf-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        <span>+</span> Register Candidates
+                    </Link>
+                </div>
             </div>
 
             {actionToast && (
@@ -200,205 +259,382 @@ export default function CandidateData() {
                 </div>
             )}
 
-            {/* Tab Navigation */}
-            <div style={{ display: "flex", gap: "10px", borderBottom: "1px solid #e5e7eb", marginBottom: "20px" }}>
-                <button
-                    type="button"
-                    onClick={() => setActiveTab("attempts")}
-                    style={{
-                        padding: "10px 18px",
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        backgroundColor: "transparent",
-                        border: "none",
-                        borderBottom: activeTab === "attempts" ? "2.5px solid #111827" : "2.5px solid transparent",
-                        color: activeTab === "attempts" ? "#111827" : "#6b7280",
-                        cursor: "pointer"
-                    }}
-                >
-                    Assessment attempts ({candidates.length})
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setActiveTab("roster")}
-                    style={{
-                        padding: "10px 18px",
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        backgroundColor: "transparent",
-                        border: "none",
-                        borderBottom: activeTab === "roster" ? "2.5px solid #111827" : "2.5px solid transparent",
-                        color: activeTab === "roster" ? "#111827" : "#6b7280",
-                        cursor: "pointer"
-                    }}
-                >
-                    Registered candidates roster ({roster.length})
-                </button>
-            </div>
+            {error && (
+                <div style={{ padding: "12px 18px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600", marginBottom: "20px" }}>
+                    ⚠ {error}
+                </div>
+            )}
 
-            {/* Search & Filter Controls */}
-            <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "20px" }}>
+            {/* Controls: Search, Role Filter, Integrity Filter, Sort */}
+            <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "20px", flexWrap: "wrap" }}>
+                {/* Search */}
                 <input
                     type="text"
                     placeholder="Search candidate name, email, or role..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
                     className="wf-input"
-                    style={{ maxWidth: "360px" }}
+                    style={{ minWidth: "280px", flex: 1 }}
                 />
 
-                {activeTab === "attempts" && (
-                    <select
-                        value={riskFilter}
-                        onChange={(e) => setRiskFilter(e.target.value)}
-                        className="wf-input"
-                        style={{ maxWidth: "180px", backgroundColor: "#ffffff" }}
-                    >
-                        <option value="all">All integrity risks</option>
-                        <option value="high">High risk only</option>
-                        <option value="medium">Medium risk only</option>
-                        <option value="low">Low risk (clean)</option>
-                    </select>
+                {/* Role Filter */}
+                <select
+                    value={roleFilter}
+                    onChange={(e) => { setRoleFilter(e.target.value); setCurrentPage(1); }}
+                    className="wf-input"
+                    style={{ width: "auto", minWidth: "160px", backgroundColor: "#ffffff" }}
+                >
+                    <option value="all">All Roles</option>
+                    {rolesList.map(r => (
+                        <option key={r._id || r.title} value={r.title}>{r.title}</option>
+                    ))}
+                </select>
+
+                {/* Integrity Filter */}
+                <select
+                    value={integrityFilter}
+                    onChange={(e) => { setIntegrityFilter(e.target.value); setCurrentPage(1); }}
+                    className="wf-input"
+                    style={{ width: "auto", minWidth: "150px", backgroundColor: "#ffffff" }}
+                >
+                    <option value="all">All Integrity</option>
+                    <option value="clean">Clean</option>
+                    <option value="medium">Medium Risk</option>
+                    <option value="high">High Risk</option>
+                    <option value="no attempts">No Attempts</option>
+                </select>
+
+                {/* Sort By */}
+                <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="wf-input"
+                    style={{ width: "auto", minWidth: "140px", backgroundColor: "#ffffff" }}
+                >
+                    <option value="joined">Sort: Joined Date</option>
+                    <option value="name">Sort: Name (A-Z)</option>
+                    <option value="score">Sort: Last Score</option>
+                    <option value="attempts">Sort: Most Attempts</option>
+                </select>
+            </div>
+
+            {/* Candidates Table */}
+            <div className="wf-card" style={{ padding: 0, overflow: "hidden" }}>
+                {loading ? (
+                    <div style={{ padding: "48px", textAlign: "center", color: "#6b7280", fontSize: "14px" }}>
+                        Loading candidate records and evaluation telemetry...
+                    </div>
+                ) : filteredCandidates.length === 0 ? (
+                    <div style={{ padding: "48px 24px", textAlign: "center" }}>
+                        <div style={{ fontSize: "32px", marginBottom: "8px" }}>👥</div>
+                        <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 6px 0" }}>
+                            No candidates found
+                        </h3>
+                        <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 16px 0" }}>
+                            {searchTerm || roleFilter !== "all" || integrityFilter !== "all"
+                                ? "No candidates matched your search criteria. Try resetting filters."
+                                : "No candidates registered yet. Add a candidate to get started."}
+                        </p>
+                        <Link to="/admin/candidates/add" className="wf-btn-primary">
+                            + Add Candidate
+                        </Link>
+                    </div>
+                ) : (
+                    <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                            <thead>
+                                <tr style={{ borderBottom: "1.5px solid #e5e7eb", backgroundColor: "#f9fafb", textAlign: "left", color: "#6b7280", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    <th style={{ padding: "12px 16px" }}>Candidate</th>
+                                    <th style={{ padding: "12px 16px" }}>Preferred Role</th>
+                                    <th style={{ padding: "12px 16px" }}>Attempts</th>
+                                    <th style={{ padding: "12px 16px" }}>Last Score</th>
+                                    <th style={{ padding: "12px 16px" }}>Integrity Status</th>
+                                    <th style={{ padding: "12px 16px" }}>Joined Date</th>
+                                    <th style={{ padding: "12px 16px", textAlign: "right" }}>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginatedCandidates.map(cand => (
+                                    <tr
+                                        key={cand._id}
+                                        onClick={() => handleRowClick(cand)}
+                                        style={{
+                                            borderBottom: "1px solid #f3f4f6",
+                                            cursor: "pointer",
+                                            backgroundColor: selectedCandidate?._id === cand._id ? "#f0f7ff" : "transparent",
+                                            transition: "background-color 0.1s ease"
+                                        }}
+                                        onMouseEnter={(e) => { if (selectedCandidate?._id !== cand._id) e.currentTarget.style.backgroundColor = "#fafafa"; }}
+                                        onMouseLeave={(e) => { if (selectedCandidate?._id !== cand._id) e.currentTarget.style.backgroundColor = "transparent"; }}
+                                    >
+                                        <td style={{ padding: "12px 16px" }}>
+                                            <div style={{ fontWeight: "700", color: "#111827" }}>{cand.username}</div>
+                                            <div style={{ fontSize: "12px", color: "#6b7280" }}>{cand.email}</div>
+                                        </td>
+                                        <td style={{ padding: "12px 16px", color: "#374151" }}>
+                                            <span style={{ backgroundColor: "#f3f4f6", padding: "3px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: "500" }}>
+                                                {cand.preferredRole || "General"}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: "12px 16px", fontWeight: "600", color: "#111827" }}>
+                                            {cand.attemptCount} {cand.attemptCount === 1 ? "attempt" : "attempts"}
+                                        </td>
+                                        <td style={{ padding: "12px 16px", fontWeight: "700", color: cand.lastScore !== null ? (cand.lastScore >= 7 ? "#059669" : "#d97706") : "#9ca3af" }}>
+                                            {cand.lastScore !== null ? `${cand.lastScore} / 10` : "—"}
+                                        </td>
+                                        <td style={{ padding: "12px 16px" }}>
+                                            <span style={{
+                                                padding: "3px 8px",
+                                                borderRadius: "4px",
+                                                fontSize: "11px",
+                                                fontWeight: "700",
+                                                backgroundColor:
+                                                    cand.integrityStatus === "High" ? "#fee2e2" :
+                                                    cand.integrityStatus === "Medium" ? "#fef3c7" :
+                                                    cand.integrityStatus === "Clean" ? "#ecfdf5" : "#f3f4f6",
+                                                color:
+                                                    cand.integrityStatus === "High" ? "#991b1b" :
+                                                    cand.integrityStatus === "Medium" ? "#92400e" :
+                                                    cand.integrityStatus === "Clean" ? "#065f46" : "#6b7280"
+                                            }}>
+                                                {cand.integrityStatus}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: "12px 16px", color: "#6b7280", fontSize: "12px" }}>
+                                            {cand.joinedFormatted}
+                                        </td>
+                                        <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                                            <div style={{ display: "inline-flex", gap: "8px" }} onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleOpenAssignModal(cand, e)}
+                                                    className="wf-btn-outline"
+                                                    style={{ padding: "4px 10px", fontSize: "11px", fontWeight: "600" }}
+                                                    title="Assign custom assessment"
+                                                >
+                                                    + Assign
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleOpenDeleteModal(cand, e)}
+                                                    style={{
+                                                        padding: "4px 8px",
+                                                        fontSize: "11px",
+                                                        border: "1px solid #fecaca",
+                                                        borderRadius: "6px",
+                                                        backgroundColor: "#ffffff",
+                                                        color: "#dc2626",
+                                                        cursor: "pointer"
+                                                    }}
+                                                    title="Remove candidate account"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Pagination Controls */}
+                {!loading && filteredCandidates.length > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #e5e7eb", fontSize: "13px", color: "#6b7280" }}>
+                        <div>
+                            Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredCandidates.length)} of {filteredCandidates.length} candidates
+                        </div>
+                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                            <button
+                                type="button"
+                                disabled={currentPage === 1}
+                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                className="wf-btn-outline"
+                                style={{ padding: "4px 10px", fontSize: "12px", opacity: currentPage === 1 ? 0.5 : 1 }}
+                            >
+                                Previous
+                            </button>
+                            <span style={{ padding: "0 6px", fontWeight: "600", color: "#111827" }}>
+                                {currentPage} / {totalPages}
+                            </span>
+                            <button
+                                type="button"
+                                disabled={currentPage === totalPages}
+                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                className="wf-btn-outline"
+                                style={{ padding: "4px 10px", fontSize: "12px", opacity: currentPage === totalPages ? 0.5 : 1 }}
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
                 )}
             </div>
 
-            {/* Tab Content 1: Attempts Table */}
-            {activeTab === "attempts" && (
-                <div className="wf-card" style={{ padding: "0", overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}>
-                        <table className="wf-table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Candidate</th>
-                                    <th>Exam</th>
-                                    <th>Score</th>
-                                    <th>Originality</th>
-                                    <th>Integrity risk</th>
-                                    <th>Anomalies</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loadingAttempts ? (
-                                    <tr>
-                                        <td colSpan={8} style={{ padding: "32px", textAlign: "center", color: "#6b7280" }}>
-                                            Loading candidates and integrity reviews...
-                                        </td>
-                                    </tr>
-                                ) : filteredAttempts.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={8} style={{ padding: "32px", textAlign: "center", color: "#6b7280" }}>
-                                            No assessment attempts match the selected filter.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    filteredAttempts.map((c, i) => (
-                                        <tr key={`${c.id}-${i}`}>
-                                            <td style={{ color: "#6b7280" }}>{c.date}</td>
-                                            <td style={{ fontWeight: "600", color: "#111827" }}>
-                                                <div>{c.name}</div>
-                                                <div style={{ fontSize: "11px", color: "#6b7280" }}>{c.email}</div>
-                                            </td>
-                                            <td style={{ color: "#374151" }}>{c.exam}</td>
-                                            <td style={{ fontWeight: "700", color: "#111827" }}>{c.score.toFixed(1)}</td>
-                                            <td style={{ color: "#374151" }}>{c.originality}</td>
-                                            <td>
-                                                <span className={getRiskPill(c.risk)}>
-                                                    {c.risk}
-                                                </span>
-                                            </td>
-                                            <td style={{ color: c.anomalies.includes("0") ? "#10b981" : "#d97706", fontWeight: "500" }}>
-                                                {c.anomalies}
-                                            </td>
-                                            <td>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => navigate(`/results/${c.id}`)}
-                                                    className="wf-btn-outline"
-                                                    style={{ padding: "4px 10px", fontSize: "12px", cursor: "pointer" }}
-                                                >
-                                                    Full review
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+            {/* Slide-over Detail Drawer */}
+            {drawerOpen && selectedCandidate && (
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    right: 0,
+                    width: "420px",
+                    maxWidth: "90vw",
+                    height: "100vh",
+                    backgroundColor: "#ffffff",
+                    boxShadow: "-4px 0 20px rgba(0,0,0,0.15)",
+                    zIndex: 1000,
+                    display: "flex",
+                    flexDirection: "column",
+                    animation: "fadeIn 0.2s ease"
+                }}>
+                    {/* Drawer Header */}
+                    <div style={{ padding: "20px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                            <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: "4px" }}>
+                                CANDIDATE DETAILS
+                            </div>
+                            <h2 style={{ fontSize: "18px", fontWeight: "800", color: "#111827", margin: "0 0 4px 0" }}>
+                                {selectedCandidate.username}
+                            </h2>
+                            <div style={{ fontSize: "13px", color: "#4b5563" }}>
+                                {selectedCandidate.email}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setDrawerOpen(false)}
+                            style={{ background: "none", border: "none", fontSize: "20px", color: "#9ca3af", cursor: "pointer", padding: "4px" }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    {/* Drawer Body */}
+                    <div style={{ padding: "20px 24px", flex: 1, overflowY: "auto" }}>
+                        {/* Summary Badges */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+                            <div style={{ padding: "12px", backgroundColor: "#f9fafb", borderRadius: "8px", border: "1px solid #f3f4f6" }}>
+                                <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>Preferred Track</div>
+                                <div style={{ fontSize: "13px", fontWeight: "700", color: "#111827" }}>
+                                    {selectedCandidate.preferredRole || "General"}
+                                </div>
+                            </div>
+                            <div style={{ padding: "12px", backgroundColor: "#f9fafb", borderRadius: "8px", border: "1px solid #f3f4f6" }}>
+                                <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>Total Attempts</div>
+                                <div style={{ fontSize: "13px", fontWeight: "700", color: "#111827" }}>
+                                    {selectedCandidate.attempts.length}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: "flex", gap: "10px", marginBottom: "24px" }}>
+                            <button
+                                type="button"
+                                onClick={() => handleOpenAssignModal(selectedCandidate)}
+                                className="wf-btn-primary"
+                                style={{ flex: 1, padding: "9px 12px", fontSize: "12px", textAlign: "center" }}
+                            >
+                                + Assign Assessment
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleOpenDeleteModal(selectedCandidate)}
+                                style={{
+                                    padding: "9px 14px",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    border: "1px solid #fecaca",
+                                    borderRadius: "8px",
+                                    backgroundColor: "#fef2f2",
+                                    color: "#dc2626",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                Remove
+                            </button>
+                        </div>
+
+                        {/* Attempt History Section */}
+                        <div>
+                            <h3 style={{ fontSize: "14px", fontWeight: "700", color: "#111827", margin: "0 0 12px 0" }}>
+                                Evaluation Attempt History ({selectedCandidate.attempts.length})
+                            </h3>
+
+                            {selectedCandidate.attempts.length === 0 ? (
+                                <div style={{ padding: "20px", textAlign: "center", backgroundColor: "#f9fafb", borderRadius: "8px", fontSize: "13px", color: "#6b7280" }}>
+                                    No evaluations recorded for this candidate yet.
+                                </div>
+                            ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                                    {selectedCandidate.attempts.map(att => {
+                                        const score = att.overallScore ?? 0;
+                                        const date = att.createdAt ? new Date(att.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent";
+                                        const plag = att.plagiarismReport || att.interviewId?.plagiarismSummary || {};
+                                        const risk = (plag.riskLevel || plag.status || "Low").toUpperCase();
+                                        const flags = plag.flaggedCount || 0;
+                                        const resultId = att._id;
+
+                                        return (
+                                            <div
+                                                key={att._id}
+                                                style={{
+                                                    padding: "14px",
+                                                    borderRadius: "8px",
+                                                    border: "1px solid #e5e7eb",
+                                                    backgroundColor: "#ffffff"
+                                                }}
+                                            >
+                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
+                                                    <div>
+                                                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#111827" }}>
+                                                            {att.roleTitle || "Technical Assessment"}
+                                                        </div>
+                                                        <div style={{ fontSize: "11px", color: "#6b7280" }}>
+                                                            {att.domain} · {date}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ fontSize: "14px", fontWeight: "800", color: score >= 7 ? "#059669" : "#d97706" }}>
+                                                        {score} / 10
+                                                    </div>
+                                                </div>
+
+                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
+                                                    <span style={{
+                                                        padding: "2px 6px",
+                                                        borderRadius: "4px",
+                                                        fontSize: "10px",
+                                                        fontWeight: "700",
+                                                        backgroundColor: risk.includes("HIGH") ? "#fee2e2" : risk.includes("MED") ? "#fef3c7" : "#ecfdf5",
+                                                        color: risk.includes("HIGH") ? "#991b1b" : risk.includes("MED") ? "#92400e" : "#065f46"
+                                                    }}>
+                                                        {risk} RISK ({flags} flags)
+                                                    </span>
+
+                                                    <Link
+                                                        to={`/results/${resultId}`}
+                                                        style={{
+                                                            fontSize: "12px",
+                                                            color: "#2563eb",
+                                                            fontWeight: "600",
+                                                            textDecoration: "none"
+                                                        }}
+                                                    >
+                                                        Diagnostic report →
+                                                    </Link>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
 
-            {/* Tab Content 2: Registered Roster Table */}
-            {activeTab === "roster" && (
-                <div className="wf-card" style={{ padding: "0", overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}>
-                        <table className="wf-table">
-                            <thead>
-                                <tr>
-                                    <th>Candidate</th>
-                                    <th>Email</th>
-                                    <th>Target track</th>
-                                    <th>Registered on</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loadingRoster ? (
-                                    <tr>
-                                        <td colSpan={5} style={{ padding: "32px", textAlign: "center", color: "#6b7280" }}>
-                                            Loading candidates roster...
-                                        </td>
-                                    </tr>
-                                ) : filteredRoster.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={5} style={{ padding: "32px", textAlign: "center", color: "#6b7280" }}>
-                                            No registered candidates found.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    filteredRoster.map((cand) => (
-                                        <tr key={cand._id}>
-                                            <td style={{ fontWeight: "600", color: "#111827" }}>{cand.username}</td>
-                                            <td style={{ color: "#374151" }}>{cand.email}</td>
-                                            <td>
-                                                <span className="wf-pill wf-pill-blue">
-                                                    {cand.preferredRole || "Software Engineer"}
-                                                </span>
-                                            </td>
-                                            <td style={{ color: "#6b7280" }}>
-                                                {cand.createdAt ? new Date(cand.createdAt).toLocaleDateString() : "Active"}
-                                            </td>
-                                            <td style={{ display: "flex", gap: "8px" }}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleOpenAssignModal(cand)}
-                                                    className="wf-btn-outline"
-                                                    style={{ padding: "4px 10px", fontSize: "12px", cursor: "pointer", color: "#2563eb", borderColor: "#bfdbfe" }}
-                                                >
-                                                    + Assign exam
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeleteCandidate(cand)}
-                                                    className="wf-btn-outline"
-                                                    style={{ padding: "4px 8px", fontSize: "12px", cursor: "pointer", color: "#dc2626", borderColor: "#fecaca" }}
-                                                    title="Remove candidate"
-                                                >
-                                                    Remove
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal: Assign Assessment */}
+            {/* Modal 1: Assign Assessment */}
             {assignModalOpen && selectedCandidate && (
                 <div style={{
                     position: "fixed",
@@ -410,51 +646,95 @@ export default function CandidateData() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    zIndex: 9999,
-                    padding: "20px"
+                    zIndex: 1100,
+                    padding: "16px"
                 }}>
-                    <div className="wf-card" style={{ maxWidth: "480px", width: "100%", padding: "24px", position: "relative" }}>
-                        <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
-                            Assign Assessment
-                        </h2>
-                        <p style={{ fontSize: "13px", color: "#6b7280", marginBottom: "20px" }}>
-                            Assign a pending assessment directly to <strong>{selectedCandidate.username}</strong> ({selectedCandidate.email}). It will appear immediately on their dashboard.
+                    <div className="wf-card" style={{ width: "480px", maxWidth: "100%", padding: "28px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                            <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                                Assign Assessment
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setAssignModalOpen(false)}
+                                style={{ background: "none", border: "none", fontSize: "18px", cursor: "pointer", color: "#9ca3af" }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 20px 0" }}>
+                            Schedule an assessment for <strong>{selectedCandidate.username}</strong> ({selectedCandidate.email}).
                         </p>
 
-                        <form onSubmit={handleAssignAssessmentSubmit}>
+                        <form onSubmit={handleAssignSubmit}>
+                            {/* Role Selection from /api/roles */}
                             <div style={{ marginBottom: "16px" }}>
                                 <label className="wf-form-label">Role Track</label>
                                 <select
                                     value={assignRole}
-                                    onChange={(e) => setAssignRole(e.target.value)}
+                                    onChange={(e) => {
+                                        setAssignRole(e.target.value);
+                                        const r = rolesList.find(item => item.title === e.target.value);
+                                        if (r?.domains?.length) setAssignDomain(r.domains[0]);
+                                    }}
                                     className="wf-input"
                                     style={{ backgroundColor: "#ffffff" }}
+                                    required
                                 >
-                                    <option>Frontend Developer</option>
-                                    <option>Backend Developer</option>
-                                    <option>Full Stack Developer</option>
-                                    <option>AI/ML Engineer</option>
-                                    <option>System Architect</option>
-                                    <option>Software Engineer</option>
-                                    <option>DevOps Engineer</option>
+                                    {rolesList.map(r => (
+                                        <option key={r._id || r.title} value={r.title}>{r.title}</option>
+                                    ))}
                                 </select>
                             </div>
 
+                            {/* Domain */}
                             <div style={{ marginBottom: "16px" }}>
-                                <label className="wf-form-label">Domain Focus</label>
+                                <label className="wf-form-label">Assessment Domain / Focus</label>
                                 <input
                                     type="text"
                                     value={assignDomain}
                                     onChange={(e) => setAssignDomain(e.target.value)}
-                                    placeholder="e.g. React & State Management"
-                                    required
+                                    placeholder="e.g. Distributed Systems, React Hooks"
                                     className="wf-input"
+                                    required
                                 />
                             </div>
 
+                            {/* Format & Difficulty */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                                <div>
+                                    <label className="wf-form-label">Format</label>
+                                    <select
+                                        value={assignType}
+                                        onChange={(e) => setAssignType(e.target.value)}
+                                        className="wf-input"
+                                        style={{ backgroundColor: "#ffffff" }}
+                                    >
+                                        <option value="theory">Theory Only</option>
+                                        <option value="coding">Coding Only</option>
+                                        <option value="mixed">Mixed Assessment</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="wf-form-label">Difficulty</label>
+                                    <select
+                                        value={assignDifficulty}
+                                        onChange={(e) => setAssignDifficulty(e.target.value)}
+                                        className="wf-input"
+                                        style={{ backgroundColor: "#ffffff" }}
+                                    >
+                                        <option value="easy">Easy</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="hard">Hard</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Questions & Duration */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
                                 <div>
-                                    <label className="wf-form-label">Questions</label>
+                                    <label className="wf-form-label">Question Count</label>
                                     <select
                                         value={assignQuestions}
                                         onChange={(e) => setAssignQuestions(e.target.value)}
@@ -464,10 +744,11 @@ export default function CandidateData() {
                                         <option value="3">3 questions</option>
                                         <option value="5">5 questions</option>
                                         <option value="8">8 questions</option>
+                                        <option value="10">10 questions</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="wf-form-label">Duration (mins)</label>
+                                    <label className="wf-form-label">Duration (minutes)</label>
                                     <select
                                         value={assignDuration}
                                         onChange={(e) => setAssignDuration(e.target.value)}
@@ -477,16 +758,18 @@ export default function CandidateData() {
                                         <option value="15">15 minutes</option>
                                         <option value="30">30 minutes</option>
                                         <option value="45">45 minutes</option>
+                                        <option value="60">60 minutes</option>
                                     </select>
                                 </div>
                             </div>
 
+                            {/* Buttons */}
                             <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                                 <button
                                     type="button"
                                     onClick={() => setAssignModalOpen(false)}
-                                    disabled={assigning}
                                     className="wf-btn-outline"
+                                    style={{ padding: "8px 16px" }}
                                 >
                                     Cancel
                                 </button>
@@ -494,12 +777,65 @@ export default function CandidateData() {
                                     type="submit"
                                     disabled={assigning}
                                     className="wf-btn-primary"
-                                    style={{ cursor: assigning ? "not-allowed" : "pointer" }}
+                                    style={{ padding: "8px 20px" }}
                                 >
-                                    {assigning ? "Assigning..." : "Confirm & Assign"}
+                                    {assigning ? "Assigning..." : "Assign Assessment"}
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal 2: Confirm Delete Candidate */}
+            {deleteModalOpen && candidateToDelete && (
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1100,
+                    padding: "16px"
+                }}>
+                    <div className="wf-card" style={{ width: "420px", maxWidth: "100%", padding: "28px" }}>
+                        <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 12px 0" }}>
+                            Remove Candidate Account?
+                        </h2>
+                        <p style={{ fontSize: "13px", color: "#4b5563", lineHeight: "1.5", margin: "0 0 20px 0" }}>
+                            Are you sure you want to delete <strong>{candidateToDelete.username}</strong> ({candidateToDelete.email})? This action cannot be undone.
+                        </p>
+                        <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteModalOpen(false)}
+                                className="wf-btn-outline"
+                                style={{ padding: "8px 16px" }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={deleting}
+                                onClick={handleConfirmDelete}
+                                style={{
+                                    padding: "8px 18px",
+                                    fontSize: "13px",
+                                    fontWeight: "600",
+                                    border: "none",
+                                    borderRadius: "8px",
+                                    backgroundColor: "#dc2626",
+                                    color: "#ffffff",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                {deleting ? "Deleting..." : "Confirm Delete"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -46,6 +46,14 @@ const resultAnalysisSchema = new mongoose.Schema({
         type:String,
         default:""
     },
+    plagiarismReport: {
+        overallPlagiarismScore: { type: Number, default: 0 },
+        overallOriginalityScore: { type: Number, default: 100 },
+        riskLevel: { type: String, default: "low" },
+        status: { type: String, default: "Clean" },
+        detectedSources: [{ type: String }],
+        flaggedCount: { type: Number, default: 0 }
+    },
 },
 {
     timestamps:true

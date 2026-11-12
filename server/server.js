@@ -26,6 +26,7 @@ app.use("/api/results", require("./route/result"))
 app.use("/api/roles", require("./route/role"))
 app.use("/api/coding", codingRoutes)
 app.use("/api/adaptive", require("./route/adaptive_routes"))
+app.use("/api/search", require("./route/search_route"))
 
 // landing page
 app.get("/", function(req, res) {

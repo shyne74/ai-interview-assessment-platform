@@ -1,5 +1,5 @@
-const express = require("express")
-const router = express.Router()
+const express = require("express");
+const router = express.Router();
 const multer = require("multer");
 const upload = multer({ dest: "uploads/" });
 
@@ -24,35 +24,40 @@ const {
     getFolderSummary,
     consolidateFolders,
     seedCodeforcesProblems
-} = require("../controller/question_controller.js")
+} = require("../controller/question_controller.js");
 
-const { protect, authorize } = require("../middleware/authmiddleware")
+const { protect, authorize } = require("../middleware/authmiddleware");
 
-router.use(protect, authorize("admin"))
+// ==========================================
+// Candidate & Admin Accessible (Protected Auth)
+// Enables PDF assimilation & JD assimilation for candidates too
+// ==========================================
+router.post("/generate", protect, generatequestion);
+router.post("/generate-from-pdf", protect, upload.single("pdf"), generateQuestionsFromPDF);
+router.post("/analyze-pdf", protect, upload.single("pdf"), analyzePdfContent);
+router.post("/generate-from-topics", protect, generateFromTopics);
+router.post("/analyze-jd", protect, upload.single("jdFile"), analyzeAndGenerateJD);
+router.get("/codeforces/:contestId/:index", protect, getcodeforceproblembyid);
+router.get("/codeforces/:contestId/:index/statement", protect, getcodeforcesstatement);
 
-router.get("/", getAllQuestion)
-router.get("/folders/summary", getFolderSummary)
-router.post("/consolidate", consolidateFolders)
-router.post("/seed-codeforces", seedCodeforcesProblems)
-router.post("/", createquestion)
+// ==========================================
+// Administration Only Routes (Admin RBAC Guard)
+// ==========================================
+router.get("/", protect, authorize("admin"), getAllQuestion);
+router.get("/folders/summary", protect, authorize("admin"), getFolderSummary);
+router.post("/consolidate", protect, authorize("admin"), consolidateFolders);
+router.post("/seed-codeforces", protect, authorize("admin"), seedCodeforcesProblems);
+router.post("/", protect, authorize("admin"), createquestion);
 
-router.post("/generate", generatequestion)
-router.post("/generate-from-pdf", upload.single("pdf"), generateQuestionsFromPDF)
-router.post("/analyze-pdf", upload.single("pdf"), analyzePdfContent)
-router.post("/generate-from-topics", generateFromTopics)
-router.post("/analyze-jd", upload.single("jdFile"), analyzeAndGenerateJD)
+router.patch("/:id/approve", protect, authorize("admin"), approvequestion);
+router.patch("/:id/rejected", protect, authorize("admin"), rejectquestion);
 
-router.patch("/:id/approve", approvequestion)
-router.patch("/:id/rejected", rejectquestion)
+router.get("/codeforces", protect, authorize("admin"), getcodeforcesproblem);
+router.post("/import-codeforces", protect, authorize("admin"), importCodeforcesProblem);
+router.get("/coding", protect, authorize("admin"), getCodingQuestions);
+router.delete("/coding/:id", protect, authorize("admin"), deleteCodingQuestion);
 
-router.get("/codeforces", getcodeforcesproblem)
-router.get("/codeforces/:contestId/:index", getcodeforceproblembyid)
-router.get("/codeforces/:contestId/:index/statement", getcodeforcesstatement)
-router.post("/import-codeforces", importCodeforcesProblem)
-router.get("/coding", getCodingQuestions)
-router.delete("/coding/:id", deleteCodingQuestion)
+router.put("/:id", protect, authorize("admin"), updatedQuestion);
+router.delete("/:id", protect, authorize("admin"), deletequestion);
 
-router.put("/:id", updatedQuestion)
-router.delete("/:id", deletequestion)
-
-module.exports = router
+module.exports = router;

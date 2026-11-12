@@ -1,435 +1,355 @@
-import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import api from "../services/api";
-import {
-    ZapIcon,
-    BrainIcon,
-    SparklesIcon,
-    ArrowRightIcon,
-    LayersIcon,
-    CheckCircleIcon,
-    ClockIcon,
-    BarChartIcon
-} from "../components/icons";
-import Toast from "../components/Toast";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import api from "../utils/api";
 
-const PRESET_ROLES = [
+export const ADAPTIVE_DOMAIN_CATEGORIES = [
     {
-        title: "Backend Developer",
-        icon: "⚙️",
-        domains: ["Node.js & MongoDB", "Express.js", "Algorithms", "System Design & Microservices", "Database"],
-        description: "Evaluates API design, async pipelines, databases, and backend scalability."
+        category: "Web & Application Engineering",
+        domains: [
+            { id: "frontend", label: "Frontend Development", role: "Frontend Developer", description: "React, modern JavaScript, UI state, rendering performance, and DOM accessibility." },
+            { id: "backend", label: "Backend Development", role: "Backend Developer", description: "Node.js, REST APIs, databases, authentication, concurrency, and caching." },
+            { id: "fullstack", label: "Full Stack Development", role: "Full Stack Developer", description: "End-to-end web engineering, frontend integration, REST APIs, and database migrations." },
+            { id: "mobile", label: "Mobile Development", role: "Mobile Developer", description: "Native and cross-platform mobile patterns, lifecycle, UI state, and device performance." }
+        ]
     },
     {
-        title: "Full Stack Developer",
-        icon: "⚡",
-        domains: ["React", "Express.js", "React & Node.js", "Database", "Algorithms"],
-        description: "Tests frontend state management, REST/GraphQL APIs, and full stack orchestration."
+        category: "Core Computer Science & Architecture",
+        domains: [
+            { id: "dsa", label: "Data Structures & Algorithms", role: "Software Engineer", description: "Trees, graphs, dynamic programming, sorting, recursion, and computational complexity." },
+            { id: "system-design", label: "System Design & Distributed Systems", role: "System Architect", description: "Scalability, caching strategies, message queues, partitioning, and microservices." },
+            { id: "database", label: "Database Management & SQL", role: "Backend Developer", description: "Query optimization, indexing, ACID transactions, normalization, and NoSQL storage." },
+            { id: "os-networks", label: "Operating Systems & Computer Networks", role: "Software Engineer", description: "Process scheduling, virtual memory, sockets, TCP/IP, DNS, and HTTP/3 protocols." },
+            { id: "software-testing", label: "Software Testing & QA", role: "Software Engineer", description: "Unit tests, integration pipelines, mocking, regression suites, and test-driven design." }
+        ]
     },
     {
-        title: "Software Engineer",
-        icon: "💻",
-        domains: ["Algorithms", "Data Structures", "Document Analysis", "Python"],
-        description: "Deep dive into problem solving, time complexity, and robust code logic."
+        category: "AI, Machine Learning & Data",
+        domains: [
+            { id: "genai-llm", label: "Generative AI & LLMs", role: "AI/ML Engineer", description: "Prompt engineering, RAG pipelines, vector databases, fine-tuning, and AI agents." },
+            { id: "aiml", label: "AI & Machine Learning Foundations", role: "AI/ML Engineer", description: "Supervised & unsupervised models, deep neural networks, and feature engineering." },
+            { id: "data-engineering", label: "Data Engineering & Analytics", role: "Data Engineer", description: "ETL pipelines, data warehousing, Apache Spark, BigQuery, and stream processing." }
+        ]
     },
     {
-        title: "AI/ML Engineer",
-        icon: "🤖",
-        domains: ["Generative AI", "Machine Learning", "Deep Learning", "Python"],
-        description: "Assesses LLM architectures, neural embeddings, model fine-tuning, and deployment."
-    },
-    {
-        title: "System Architect",
-        icon: "🏛️",
-        domains: ["System Design & Microservices", "Distributed Systems", "Database"],
-        description: "Focuses on high-availability, fault tolerance, caching, and infrastructure patterns."
-    },
-    {
-        title: "DevOps Engineer",
-        icon: "🚀",
-        domains: ["CI/CD Pipelines", "Docker & Kubernetes", "Cloud Architecture"],
-        description: "Tests containerization, deployment pipelines, infrastructure as code, and observability."
-    },
-    {
-        title: "Philosophy",
-        icon: "🧠",
-        domains: ["Philosophy of Language & Semantics", "Ancient Greek Philosophy", "Metaphysics & Theology", "Political Philosophy & Natural Rights"],
-        description: "Deep conceptual assessment across epistemology, metaphysics, language, and ethics."
+        category: "Cloud, Infrastructure & Security",
+        domains: [
+            { id: "cloud", label: "Cloud Computing (AWS / GCP / Azure)", role: "Cloud Engineer", description: "Serverless compute, IAM roles, cloud networking, VPCs, and storage services." },
+            { id: "devops", label: "DevOps & CI/CD Pipelines", role: "DevOps Engineer", description: "Docker containers, Kubernetes orchestration, CI/CD automation, and monitoring." },
+            { id: "cybersecurity", label: "Cybersecurity & Web Security", role: "Security Engineer", description: "OWASP Top 10 vulnerabilities, authentication, encryption, PKI, and security auditing." }
+        ]
     }
 ];
 
-const DIFFICULTY_LEVELS = [
-    {
-        level: 1,
-        title: "Level 1: Beginner",
-        badge: "badge-approved",
-        icon: "🌱",
-        description: "Foundational definitions, core syntax, and basic principles.",
-        startingMultiplier: "1.0x"
-    },
-    {
-        level: 2,
-        title: "Level 2: Intermediate",
-        badge: "badge-cyan",
-        icon: "✨",
-        description: "Practical implementations, architectural tradeoffs, and typical workflows.",
-        startingMultiplier: "1.5x"
-    },
-    {
-        level: 3,
-        title: "Level 3: Advanced",
-        badge: "badge-pending",
-        icon: "🔥",
-        description: "Complex optimizations, concurrency, failure modes, and distributed patterns.",
-        startingMultiplier: "2.0x"
-    },
-    {
-        level: 4,
-        title: "Level 4: Principal Expert",
-        badge: "badge-rejected",
-        icon: "⚡",
-        description: "Deep architectural edge cases, memory internals, and cross-paradigm depth.",
-        startingMultiplier: "3.0x"
-    }
-];
+export const ALL_ADAPTIVE_DOMAINS = ADAPTIVE_DOMAIN_CATEGORIES.flatMap(c => c.domains);
 
-function AdaptiveExamHub() {
+export default function AdaptiveExamHub() {
     const navigate = useNavigate();
-
-    const [selectedRole, setSelectedRole] = useState(PRESET_ROLES[0].title);
-    const [selectedDomain, setSelectedDomain] = useState(PRESET_ROLES[0].domains[0]);
-    const [customDomain, setCustomDomain] = useState("");
-    const [startingLevel, setStartingLevel] = useState(2);
-    const [targetCount, setTargetCount] = useState(5);
+    const [selectedDomainLabel, setSelectedDomainLabel] = useState("Frontend Development");
     const [loading, setLoading] = useState(false);
-    const [toast, setToast] = useState({ show: false, message: "", type: "info" });
+    const [error, setError] = useState("");
 
-    // Update domain when role changes
-    useEffect(() => {
-        const matched = PRESET_ROLES.find((r) => r.title === selectedRole);
-        if (matched && matched.domains.length > 0) {
-            setSelectedDomain(matched.domains[0]);
-            setCustomDomain("");
-        }
-    }, [selectedRole]);
+    const activeDomainObj = ALL_ADAPTIVE_DOMAINS.find(d => d.label === selectedDomainLabel) || ALL_ADAPTIVE_DOMAINS[0];
 
-    const handleStartExam = async () => {
-        const effectiveDomain = customDomain.trim() || selectedDomain;
+    const handleStartAdaptive = async () => {
+        setLoading(true);
+        setError("");
         try {
-            setLoading(true);
-            const response = await api.post("/adaptive/start", {
-                roleTitle: selectedRole,
-                role: selectedRole,
-                domain: effectiveDomain,
-                startingLevel: Number(startingLevel),
-                questionCount: Number(targetCount),
-                targetCount: Number(targetCount)
+            const res = await api.post("/adaptive/start", {
+                roleTitle: activeDomainObj.role,
+                domain: activeDomainObj.label,
+                difficulty: "medium",
+                questionCount: 5,
+                durationSeconds: 1800
             });
-
-            const interviewId = response.data?.interview?._id || response.data?.interviewId;
-            if (!interviewId) {
-                throw new Error("Interview session could not be created.");
-            }
-
-            try {
-                localStorage.setItem("activeInterview", JSON.stringify({
-                    id: interviewId,
-                    type: "adaptive",
-                    roleTitle: selectedRole,
-                    domain: effectiveDomain,
-                    timestamp: Date.now()
-                }));
-            } catch (e) {}
-
-            navigate(`/adaptive-interview/${interviewId}`);
+            const adaptiveId = res.data.interviewId || res.data.interview?._id;
+            navigate(`/adaptive-interview/${adaptiveId}`);
         } catch (err) {
-            setToast({
-                show: true,
-                message: err.response?.data?.message || err.message || "Failed to initialize Adaptive Exam session.",
-                type: "error"
-            });
+            console.error("Adaptive start error:", err);
+            setError(err.response?.data?.message || "Failed to start adaptive session. Please try again.");
         } finally {
             setLoading(false);
         }
     };
 
-    const currentRoleObj = PRESET_ROLES.find((r) => r.title === selectedRole) || PRESET_ROLES[0];
-
     return (
-        <div className="min-vh-100 tech-grid-bg pb-5">
-            {toast.show && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={() => setToast({ ...toast, show: false })}
-                />
-            )}
+        <div style={{ display: "flex", flexDirection: "column", gap: "28px", maxWidth: "1216px", margin: "0 auto" }}>
+            {/* Header */}
+            <div>
+                <div style={{
+                    fontSize: "11px",
+                    fontWeight: "700",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "#64748b",
+                    marginBottom: "6px"
+                }}>
+                    04 / ADAPTIVE ASSESSMENT
+                </div>
+                <h1 style={{
+                    fontSize: "28px",
+                    fontWeight: "800",
+                    color: "#0f172a",
+                    letterSpacing: "-0.03em",
+                    margin: "0 0 6px 0"
+                }}>
+                    Find the edge of what you know.
+                </h1>
+                <p style={{
+                    fontSize: "15px",
+                    color: "#475569",
+                    margin: 0
+                }}>
+                    An assessment that adapts to your answers in real time, so you can see where to focus next.
+                </p>
+            </div>
 
-            <div className="container py-4 py-md-5">
-                {/* Hero Card */}
-                <div className="glass-card p-4 p-md-5 mb-4 position-relative overflow-hidden">
-                    <div
-                        style={{
-                            position: "absolute",
-                            top: "-60px",
-                            right: "-60px",
-                            width: "260px",
-                            height: "260px",
-                            borderRadius: "50%",
-                            background: "radial-gradient(circle, rgba(99, 102, 241, 0.28) 0%, transparent 70%)",
-                            pointerEvents: "none"
-                        }}
-                    />
-
-                    <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-                        <div>
-                            <div className="d-flex align-items-center gap-2 mb-2">
-                                <span className="badge-tech badge-indigo d-inline-flex align-items-center gap-1">
-                                    <ZapIcon size={14} className="text-amber-400" /> Dynamic AI Assessment
-                                </span>
-                                <span className="badge-tech badge-cyan">
-                                    Real-time Difficulty Scaling
-                                </span>
+            {/* Split Content */}
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "1.3fr 1fr",
+                gap: "24px"
+            }}>
+                {/* Left Column: Adaptive Path & Principles */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    {/* Blue Banner with 3 Steps */}
+                    <div style={{
+                        backgroundColor: "#f0f7ff",
+                        border: "1px solid #bfdbfe",
+                        borderRadius: "14px",
+                        padding: "28px"
+                    }}>
+                        <div style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr 1fr",
+                            gap: "16px",
+                            marginBottom: "20px"
+                        }}>
+                            <div>
+                                <div style={{ fontSize: "20px", fontWeight: "800", color: "#2563eb", marginBottom: "4px" }}>
+                                    01
+                                </div>
+                                <div style={{ fontSize: "13px", fontWeight: "700", color: "#0f172a" }}>
+                                    Start with a question
+                                </div>
                             </div>
-                            <h1 className="fw-bold text-white mb-2" style={{ letterSpacing: "-0.02em" }}>
-                                Adaptive AI Interview Assessment
-                            </h1>
-                            <p className="text-muted mb-0" style={{ maxWidth: "680px" }}>
-                                Experience an interview engine that actively scales in real-time. High-scoring answers unlock higher difficulty tiers and bonus multipliers, while constructive diagnostic hints guide you when questions challenge your understanding.
-                            </p>
+                            <div>
+                                <div style={{ fontSize: "20px", fontWeight: "800", color: "#2563eb", marginBottom: "4px" }}>
+                                    02
+                                </div>
+                                <div style={{ fontSize: "13px", fontWeight: "700", color: "#0f172a" }}>
+                                    Respond in your words
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "20px", fontWeight: "800", color: "#2563eb", marginBottom: "4px" }}>
+                                    03
+                                </div>
+                                <div style={{ fontSize: "13px", fontWeight: "700", color: "#0f172a" }}>
+                                    Explore the next level
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="d-flex flex-column gap-2">
-                            <button
-                                className="btn btn-primary-gradient px-4 py-3 fw-bold fs-6 d-flex align-items-center gap-2 shadow-lg hover-scale"
-                                onClick={handleStartExam}
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <>
-                                        <span className="spinner-border spinner-border-sm" /> Initializing HUD...
-                                    </>
-                                ) : (
-                                    <>
-                                        <ZapIcon size={18} /> Start Adaptive Exam Now <ArrowRightIcon size={18} />
-                                    </>
-                                )}
-                            </button>
+                        <div style={{ fontSize: "12px", color: "#1e40af", fontWeight: "500" }}>
+                            A harder question is a signal to explore, not a judgement about your ability.
+                        </div>
+                    </div>
+
+                    {/* Principles Card */}
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "14px",
+                        padding: "28px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "16px"
+                    }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                            <span style={{ color: "#10b981", fontSize: "16px", fontWeight: "700" }}>✓</span>
+                            <div>
+                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" }}>
+                                    Your answers guide the path
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#64748b" }}>
+                                    The assessment uses your responses to dynamically scale difficulty and select what to explore next.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                            <span style={{ color: "#10b981", fontSize: "16px", fontWeight: "700" }}>✓</span>
+                            <div>
+                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" }}>
+                                    No need to choose a difficulty
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#64748b" }}>
+                                    Start with your domain. The real-time adaptive engine calibrates your level question by question.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                            <span style={{ color: "#10b981", fontSize: "16px", fontWeight: "700" }}>✓</span>
+                            <div>
+                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" }}>
+                                    Finish with a useful direction
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#64748b" }}>
+                                    Review skill-level feedback, mastery rank, and recommended next practice steps.
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="row g-4">
-                    {/* Left Setup Column */}
-                    <div className="col-lg-8">
-                        {/* 1. Role Selection */}
-                        <div className="glass-card p-4 mb-4">
-                            <h5 className="fw-bold text-white mb-3 d-flex align-items-center gap-2">
-                                <span>1.</span> Select Your Target Role
-                            </h5>
-                            <div className="row g-2">
-                                {PRESET_ROLES.map((r) => {
-                                    const isSelected = selectedRole === r.title;
-                                    return (
-                                        <div key={r.title} className="col-md-6">
-                                            <div
-                                                className={`p-3 rounded-3 cursor-pointer transition-all ${
-                                                    isSelected ? "border-indigo-400 bg-indigo-950 bg-opacity-40" : "bg-dark bg-opacity-50 border-secondary border-opacity-25"
-                                                }`}
-                                                style={{
-                                                    border: isSelected ? "1.5px solid #6366f1" : "1px solid rgba(255, 255, 255, 0.08)",
-                                                    cursor: "pointer"
-                                                }}
-                                                onClick={() => setSelectedRole(r.title)}
-                                            >
-                                                <div className="d-flex justify-content-between align-items-center mb-1">
-                                                    <span className="fw-bold text-white small fs-6">
-                                                        {r.icon} {r.title}
-                                                    </span>
-                                                    {isSelected && <span className="text-cyan-400 small fw-bold">✓ Active</span>}
-                                                </div>
-                                                <p className="text-muted small mb-0" style={{ fontSize: "0.78rem" }}>
-                                                    {r.description}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                {/* Right Column: Start Card */}
+                <div>
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "14px",
+                        padding: "28px"
+                    }}>
+                        <h3 style={{
+                            fontSize: "18px",
+                            fontWeight: "700",
+                            color: "#0f172a",
+                            margin: "0 0 16px 0"
+                        }}>
+                            Choose your domain
+                        </h3>
 
-                        {/* 2. Domain & Starting Difficulty */}
-                        <div className="glass-card p-4 mb-4">
-                            <h5 className="fw-bold text-white mb-3 d-flex align-items-center gap-2">
-                                <span>2.</span> Focus Domain & Question Budget
-                            </h5>
-                            <div className="row g-3">
-                                <div className="col-md-6">
-                                    <div className="d-flex justify-content-between align-items-center mb-1">
-                                        <label className="form-label text-secondary small fw-semibold mb-0">Target Domain</label>
-                                        {customDomain.trim() && (
-                                            <span className="badge-tech badge-cyan" style={{ fontSize: "0.68rem" }}>
-                                                ✨ Custom Active
-                                            </span>
-                                        )}
-                                    </div>
-                                    <select
-                                        className="form-select form-control-custom mb-2"
-                                        value={customDomain.trim() ? "" : selectedDomain}
-                                        onChange={(e) => {
-                                            setSelectedDomain(e.target.value);
-                                            setCustomDomain("");
-                                        }}
-                                    >
-                                        {currentRoleObj.domains.map((dom) => (
-                                            <option key={dom} value={dom}>
-                                                📂 {dom}
+                        <div style={{ marginBottom: "16px" }}>
+                            <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
+                                Target Domain ({ALL_ADAPTIVE_DOMAINS.length} available)
+                            </label>
+                            <select
+                                value={selectedDomainLabel}
+                                onChange={(e) => setSelectedDomainLabel(e.target.value)}
+                                style={{
+                                    width: "100%",
+                                    padding: "10px 12px",
+                                    borderRadius: "8px",
+                                    border: "1.5px solid #cbd5e1",
+                                    fontSize: "13.5px",
+                                    fontWeight: "600",
+                                    color: "#0f172a",
+                                    backgroundColor: "#ffffff"
+                                }}
+                            >
+                                {ADAPTIVE_DOMAIN_CATEGORIES.map((cat, idx) => (
+                                    <optgroup key={idx} label={cat.category}>
+                                        {cat.domains.map(d => (
+                                            <option key={d.id} value={d.label}>
+                                                {d.label}
                                             </option>
                                         ))}
-                                    </select>
-                                    <div className="position-relative">
-                                        <input
-                                            type="text"
-                                            className="form-control form-control-custom text-white"
-                                            placeholder="Or enter custom technology (e.g. Docker, Kafka, Terraform)..."
-                                            value={customDomain}
-                                            onChange={(e) => setCustomDomain(e.target.value)}
-                                        />
-                                        {customDomain && (
-                                            <button
-                                                type="button"
-                                                className="btn-icon-ghost position-absolute top-50 end-0 translate-middle-y me-2"
-                                                onClick={() => setCustomDomain("")}
-                                                style={{ color: "#94a3b8" }}
-                                            >
-                                                ✕
-                                            </button>
-                                        )}
-                                    </div>
-                                    {customDomain.trim() && (
-                                        <div className="text-cyan-400 small mt-1" style={{ fontSize: "0.75rem" }}>
-                                            ✨ AI will dynamically generate questions for <strong>{customDomain.trim()}</strong>.
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="col-md-6">
-                                    <label className="form-label text-secondary small fw-semibold">Question Count</label>
-                                    <select
-                                        className="form-select form-control-custom"
-                                        value={targetCount}
-                                        onChange={(e) => setTargetCount(Number(e.target.value))}
-                                    >
-                                        <option value={3}>3 Questions (Quick Sprint - 5 mins)</option>
-                                        <option value={5}>5 Questions (Standard Assessment - 10 mins)</option>
-                                        <option value={8}>8 Questions (In-depth Evaluation - 18 mins)</option>
-                                        <option value={10}>10 Questions (Comprehensive Exam - 25 mins)</option>
-                                    </select>
-                                </div>
-                            </div>
+                                    </optgroup>
+                                ))}
+                            </select>
                         </div>
 
-                        {/* 3. Starting Tier Selection */}
-                        <div className="glass-card p-4">
-                            <h5 className="fw-bold text-white mb-3 d-flex align-items-center gap-2">
-                                <span>3.</span> Starting Difficulty Tier
-                            </h5>
-                            <div className="row g-3">
-                                {DIFFICULTY_LEVELS.map((lvl) => {
-                                    const isSelected = startingLevel === lvl.level;
-                                    return (
-                                        <div key={lvl.level} className="col-md-6">
-                                            <div
-                                                className={`p-3 rounded-3 h-100 transition-all ${
-                                                    isSelected ? "bg-indigo-950 bg-opacity-40" : "bg-dark bg-opacity-50"
-                                                }`}
-                                                style={{
-                                                    border: isSelected ? "1.5px solid #6366f1" : "1px solid rgba(255, 255, 255, 0.08)",
-                                                    cursor: "pointer"
-                                                }}
-                                                onClick={() => setStartingLevel(lvl.level)}
-                                            >
-                                                <div className="d-flex justify-content-between align-items-center mb-2">
-                                                    <span className="fw-bold text-white small">
-                                                        {lvl.icon} {lvl.title}
-                                                    </span>
-                                                    <span className={`badge-tech ${lvl.badge}`} style={{ fontSize: "0.68rem" }}>
-                                                        {lvl.startingMultiplier} Multiplier
-                                                    </span>
-                                                </div>
-                                                <p className="text-muted small mb-0" style={{ fontSize: "0.8rem" }}>
-                                                    {lvl.description}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                        {/* Domain Preview Card */}
+                        <div style={{
+                            backgroundColor: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "8px",
+                            padding: "14px",
+                            marginBottom: "20px"
+                        }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                                <span style={{ fontSize: "13px", fontWeight: "700", color: "#1e3a8a" }}>
+                                    {activeDomainObj.label}
+                                </span>
+                                <span style={{
+                                    fontSize: "10.5px",
+                                    fontWeight: "700",
+                                    color: "#4338ca",
+                                    backgroundColor: "#e0e7ff",
+                                    padding: "2px 6px",
+                                    borderRadius: "4px"
+                                }}>
+                                    Track: {activeDomainObj.role}
+                                </span>
                             </div>
+                            <p style={{ fontSize: "12px", color: "#64748b", margin: 0, lineHeight: "1.45" }}>
+                                {activeDomainObj.description}
+                            </p>
                         </div>
-                    </div>
 
-                    {/* Right Summary & Rules HUD Column */}
-                    <div className="col-lg-4">
-                        <div className="glass-card p-4 mb-4">
-                            <h6 className="fw-bold text-white mb-3 d-flex align-items-center gap-2">
-                                <BrainIcon size={18} className="text-cyan-400" /> Adaptive Rules Engine
-                            </h6>
+                        <p style={{
+                            fontSize: "13px",
+                            color: "#64748b",
+                            lineHeight: "1.5",
+                            marginBottom: "20px"
+                        }}>
+                            You will answer calibrated technical questions with real-time AI difficulty progression and instant feedback.
+                        </p>
 
-                            <div className="d-flex flex-column gap-3 mb-4">
-                                <div className="d-flex gap-3 align-items-start">
-                                    <div className="p-2 rounded-circle bg-indigo-500 bg-opacity-20 text-indigo-300">
-                                        <ZapIcon size={16} />
-                                    </div>
-                                    <div>
-                                        <span className="text-white fw-semibold small d-block">Real-time Level Scaling</span>
-                                        <span className="text-muted" style={{ fontSize: "0.78rem" }}>
-                                            Scores ≥ 7.0 automatically level up the next challenge; scores &lt; 5.0 step down to reinforce core fundamentals.
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="d-flex gap-3 align-items-start">
-                                    <div className="p-2 rounded-circle bg-emerald-500 bg-opacity-20 text-emerald-300">
-                                        <SparklesIcon size={16} />
-                                    </div>
-                                    <div>
-                                        <span className="text-white fw-semibold small d-block">Streak Bonus Multipliers</span>
-                                        <span className="text-muted" style={{ fontSize: "0.78rem" }}>
-                                            Maintain consecutive high-scoring submissions to trigger up to a 3.0x bonus score multiplier.
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="d-flex gap-3 align-items-start">
-                                    <div className="p-2 rounded-circle bg-cyan-500 bg-opacity-20 text-cyan-300">
-                                        <BarChartIcon size={16} />
-                                    </div>
-                                    <div>
-                                        <span className="text-white fw-semibold small d-block">AI Diagnostic Breakdown</span>
-                                        <span className="text-muted" style={{ fontSize: "0.78rem" }}>
-                                            Receive immediate actionable feedback, identified strengths, and recommended targeted study concepts.
-                                        </span>
-                                    </div>
-                                </div>
+                        {error && (
+                            <div style={{
+                                backgroundColor: "#fef2f2",
+                                border: "1px solid #fecaca",
+                                color: "#b91c1c",
+                                padding: "8px 12px",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                marginBottom: "16px"
+                            }}>
+                                {error}
                             </div>
+                        )}
 
-                            <hr style={{ borderColor: "var(--border-subtle)" }} className="my-3" />
+                        <button
+                            type="button"
+                            onClick={handleStartAdaptive}
+                            disabled={loading}
+                            style={{
+                                width: "100%",
+                                backgroundColor: loading ? "#94a3b8" : "#1e3a8a",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "12px",
+                                fontSize: "14px",
+                                fontWeight: "600",
+                                cursor: loading ? "not-allowed" : "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "6px",
+                                marginBottom: "14px"
+                            }}
+                        >
+                            {loading ? "Initializing assessment..." : "Start adaptive assessment →"}
+                        </button>
 
-                            {/* Launch CTA */}
-                            <button
-                                className="btn btn-primary-gradient w-100 py-3 fw-bold d-flex align-items-center justify-content-center gap-2"
-                                onClick={handleStartExam}
-                                disabled={loading}
+                        <div style={{ textAlign: "center", marginBottom: "24px" }}>
+                            <Link
+                                to="/practice/mock-setup"
+                                style={{
+                                    fontSize: "13px",
+                                    color: "#2563eb",
+                                    textDecoration: "none",
+                                    fontWeight: "500"
+                                }}
                             >
-                                {loading ? (
-                                    <>
-                                        <span className="spinner-border spinner-border-sm" /> Starting Session...
-                                    </>
-                                ) : (
-                                    <>
-                                        <ZapIcon size={18} /> Launch Adaptive Exam
-                                    </>
-                                )}
-                            </button>
+                                Use a standard interview instead
+                            </Link>
+                        </div>
+
+                        <div style={{
+                            backgroundColor: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "8px",
+                            padding: "12px 14px",
+                            fontSize: "11px",
+                            color: "#64748b",
+                            lineHeight: "1.4"
+                        }}>
+                            <span style={{ fontWeight: "700", color: "#334155" }}>About this concept: </span>
+                            Questions start at Intermediate Level 2 and dynamically adjust between Beginner (1) and Expert (4) based on your answer evaluation.
                         </div>
                     </div>
                 </div>
@@ -437,5 +357,3 @@ function AdaptiveExamHub() {
         </div>
     );
 }
-
-export default AdaptiveExamHub;

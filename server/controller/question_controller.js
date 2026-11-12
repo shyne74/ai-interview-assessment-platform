@@ -70,20 +70,36 @@ exports.createquestion = async function(req, res) {
 
 exports.getAllQuestion = async function(req, res) {
     try {
-        const { domain, role, status } = req.query
-        let query = {}
+        const { domain, role, status, difficulty, search } = req.query;
+        let query = {};
 
-        if (role) query.role = role
-        if (status) query.status = status
-        if (domain) query.domain = domain
+        if (role && role !== "All" && role !== "all") query.role = role;
+        if (status && status !== "All" && status !== "all") query.status = status;
+        if (domain && domain !== "All" && domain !== "all") query.domain = domain;
+        if (difficulty && difficulty !== "All" && difficulty !== "all") query.difficulty = difficulty.toLowerCase();
+        if (search && search.trim()) {
+            query.questionText = { $regex: search.trim(), $options: "i" };
+        }
 
-        const question = await Question.find(query).populate(
-            "createdBy",
-            "username email"
-        );
-        return res.json(question)
+        const total = await Question.countDocuments(query);
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, parseInt(req.query.limit) || 20);
+        const skip = (page - 1) * limit;
+
+        const questions = await Question.find(query)
+            .populate("createdBy", "username email")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        return res.json({
+            questions,
+            total,
+            page,
+            totalPages: Math.ceil(total / limit)
+        });
     } catch (error) {
-        return res.status(400).json({ message: error.message })
+        return res.status(400).json({ message: error.message });
     }
 }
 

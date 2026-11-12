@@ -1,13 +1,40 @@
 const Interview = require("../models/interview_schema");
 const Question = require("../models/question_schema");
 const axios = require("axios");
-const { computeAnswerIntegrity } = require("../services/integrity");
+const { computeAnswerIntegrity, evaluateAnswerPlagiarism } = require("../services/integrity");
 const { MAX_INTEGRITY_VIOLATIONS, DEFAULT_DURATION_SECONDS } = require("../config/integrity_config");
 const { generateAndSaveQuestions } = require("../utils/ai_question_generator");
 
 /**
  * Checks if session time has expired based on server startedAt and durationSeconds.
  */
+
+function normalizeQuestionText(text) {
+    if (!text || typeof text !== "string") return "";
+    return text.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function deduplicateQuestions(qList) {
+    if (!Array.isArray(qList)) return [];
+    const seenIds = new Set();
+    const seenTexts = new Set();
+    const unique = [];
+
+    for (const q of qList) {
+        if (!q) continue;
+        const idStr = q._id ? q._id.toString() : null;
+        const textKey = normalizeQuestionText(q.questionText || q.codingData?.title || "");
+
+        if (idStr && seenIds.has(idStr)) continue;
+        if (textKey && seenTexts.has(textKey)) continue;
+
+        if (idStr) seenIds.add(idStr);
+        if (textKey) seenTexts.add(textKey);
+        unique.push(q);
+    }
+    return unique;
+}
+
 function isSessionExpired(interview) {
     if (!interview.startedAt || !interview.durationSeconds) return false;
     const deadline = new Date(interview.startedAt).getTime() + (interview.durationSeconds * 1000);
@@ -16,13 +43,73 @@ function isSessionExpired(interview) {
 
 exports.startInterview = async function(req, res) {
     try {
-        const { roleTitle, domain, limit = 5, assessmentType = "theory", questionIds, durationSeconds } = req.body;
+        const roleTitle = req.body.roleTitle || req.body.role || "Software Engineer";
+        const domain = req.body.domain || req.body.domainTitle || roleTitle;
+        const limit = Number(req.body.limit || req.body.totalQuestions || 5);
+        const assessmentType = req.body.assessmentType || req.body.questionFormat || "theory";
+        const questionIds = req.body.questionIds;
+        const durationSeconds = req.body.durationSeconds;
+        const selectedTopics = req.body.selectedTopics || req.body.topics || [];
+        const generateWithAI = req.body.generateWithAI !== undefined ? req.body.generateWithAI : true;
 
         let questions = [];
 
+        // 1. If pre-generated or specific question IDs are passed, use them directly (preserving order)
         if (Array.isArray(questionIds) && questionIds.length > 0) {
-            questions = await Question.find({ _id: { $in: questionIds } });
-        } else {
+            const foundQuestions = await Question.find({ _id: { $in: questionIds } });
+            const docMap = new Map(foundQuestions.map(q => [q._id.toString(), q]));
+            questions = questionIds.map(id => docMap.get(id?.toString())).filter(Boolean);
+            console.log(`[Interviewer] Loaded ${questions.length} exact questions from pre-generated questionIds.`);
+        }
+        // 2. If dynamic AI question generation is explicitly requested for selected topics or PDF document
+        else if ((generateWithAI && assessmentType !== "coding") || req.body.pdfText) {
+            try {
+                const effectiveTopics = Array.isArray(selectedTopics) && selectedTopics.length > 0
+                    ? selectedTopics
+                    : (domain ? domain.split(',').map(s => s.trim()) : [roleTitle]);
+
+                const FASTAPI_URL = process.env.FASTAPI_URL || "http://127.0.0.1:8000";
+                console.log(`[Interviewer] Generating ${limit} dynamic AI questions for topics:`, effectiveTopics);
+
+                const genRes = await axios.post(`${FASTAPI_URL}/generate-questions-from-topics`, {
+                    role: roleTitle,
+                    domain: effectiveTopics.join(", "),
+                    selectedTopics: effectiveTopics,
+                    difficulty: req.body.difficulty || "medium",
+                    num_questions: Number(limit),
+                    assessmentType: assessmentType,
+                    pdfText: req.body.pdfText || ""
+                }, { timeout: 35000 });
+
+                const aiQuestions = genRes.data?.questions || [];
+                if (aiQuestions.length > 0) {
+                    const docsToSave = aiQuestions.map((q, idx) => ({
+                        questionText: q.questionText,
+                        role: roleTitle,
+                        domain: effectiveTopics[idx % effectiveTopics.length] || domain || "General",
+                        difficulty: q.difficulty || "medium",
+                        type: q.type || (assessmentType === "coding" ? "coding" : "technical"),
+                        assessmentType: q.assessmentType || assessmentType || "theory",
+                        idealAnswer: q.idealAnswer || "Comprehensive explanation demonstrating depth of understanding and practical application.",
+                        keypoint: Array.isArray(q.keypoint) && q.keypoint.length > 0 ? q.keypoint : [effectiveTopics[0] || "General", roleTitle, "Core Principles"],
+                        maxscore: Number(q.maxscore) || 10,
+                        timeLimit: Number(q.timeLimit) || 180,
+                        status: "approved",
+                        isAIGenerated: true,
+                        createdBy: req.user?._id
+                    }));
+                    questions = await Question.insertMany(docsToSave);
+                    console.log(`[Interviewer] Successfully generated and linked ${questions.length} AI questions.`);
+                }
+            } catch (genErr) {
+                console.warn("[Interviewer] Dynamic AI question generation error:", genErr.message);
+            }
+        }
+
+        // 3. Fallback to Question Bank ONLY if AI generation was skipped or returned fewer questions,
+        // and NEVER for PDF assessments or when specific questionIds were provided.
+        const isPdfAssessment = Boolean(req.body.pdfText || req.body.interviewType === "pdf-prep" || roleTitle === "Document Analysis");
+        if (questions.length < Number(limit) && (!questionIds || questionIds.length === 0) && !isPdfAssessment) {
             const roleRegex = new RegExp(`^${roleTitle.trim()}$`, "i");
             const targetDomain = (domain && domain.trim()) ? domain.trim() : "General";
             const domainRegex = targetDomain !== "General"
@@ -179,6 +266,8 @@ exports.startInterview = async function(req, res) {
             }
         }
 
+        questions = deduplicateQuestions(questions).slice(0, Number(limit));
+
         if (!questions.length) {
             return res.status(404).json({
                 message: `No approved questions could be found or generated for "${roleTitle}" with domain "${domain || 'General'}". Please try again.`
@@ -253,11 +342,21 @@ async function processEvaluation(interview, answers, autoReason = "") {
         const language = clientAns.language || resp.language || "javascript";
         const telemetry = clientAns.telemetry || resp.telemetry || {};
 
+        const submittedAnsText = isCoding ? (code || userAnswer || "") : (userAnswer || code || "");
+
         // Compute integrity report for this answer
         const integrityReport = computeAnswerIntegrity({
-            answer: isCoding ? (code || userAnswer) : userAnswer,
+            answer: submittedAnsText,
             idealAnswer: idealAnswer,
             telemetry: telemetry
+        });
+
+        // Compute plagiarism report for this answer
+        const plagiarismReport = evaluateAnswerPlagiarism({
+            answer: submittedAnsText,
+            idealAnswer: idealAnswer,
+            telemetry: telemetry,
+            questionType: isCoding ? "coding" : "theory"
         });
 
         if (isCoding) {
@@ -278,7 +377,8 @@ async function processEvaluation(interview, answers, autoReason = "") {
                     },
                     aiFeedback: "No code was submitted.",
                     telemetry,
-                    integrityReport
+                    integrityReport,
+                    plagiarismReport
                 };
             }
 
@@ -322,7 +422,8 @@ async function processEvaluation(interview, answers, autoReason = "") {
                         feedback: parsedEval.feedback || ""
                     },
                     telemetry,
-                    integrityReport
+                    integrityReport,
+                    plagiarismReport
                 };
             } catch (codeErr) {
                 const fallbackScore = codeToEval.length > 30 ? 7.0 : 4.0;
@@ -342,7 +443,8 @@ async function processEvaluation(interview, answers, autoReason = "") {
                     },
                     aiFeedback: "Code submission received and recorded.",
                     telemetry,
-                    integrityReport
+                    integrityReport,
+                    plagiarismReport
                 };
             }
         } else {
@@ -364,7 +466,8 @@ async function processEvaluation(interview, answers, autoReason = "") {
                     },
                     aiFeedback: "Candidate did not provide an answer.",
                     telemetry,
-                    integrityReport
+                    integrityReport,
+                    plagiarismReport
                 };
             }
 
@@ -394,7 +497,8 @@ async function processEvaluation(interview, answers, autoReason = "") {
                     },
                     aiFeedback: evaldata.feedback || "Evaluated.",
                     telemetry,
-                    integrityReport
+                    integrityReport,
+                    plagiarismReport
                 };
             } catch (theoryErr) {
                 const ansWords = candidateAns.split(/\s+/).length;
@@ -413,7 +517,8 @@ async function processEvaluation(interview, answers, autoReason = "") {
                     },
                     aiFeedback: "Answer received. Good conceptual coverage.",
                     telemetry,
-                    integrityReport
+                    integrityReport,
+                    plagiarismReport
                 };
             }
         }
@@ -431,6 +536,9 @@ async function processEvaluation(interview, answers, autoReason = "") {
         ? Number((totalScoreSum / evaluatedResponses.length).toFixed(1))
         : 0;
 
+    if (!interview.domain) {
+        interview.domain = interview.roleTitle || "General Technical";
+    }
     interview.responses = evaluatedResponses;
     interview.overallScore = finalAverage;
     interview.status = "evaluated";
@@ -488,6 +596,10 @@ exports.submitInterview = async function(req, res) {
         // Server-authoritative timer check
         const expired = isSessionExpired(interview);
         const autoReason = expired ? "auto-submitted: time expired" : (reason || "");
+
+        if (!interview.domain) {
+            interview.domain = interview.roleTitle || "General Technical";
+        }
 
         // Transition: in-progress -> submitted
         interview.status = "submitted";
@@ -666,6 +778,9 @@ exports.heartbeat = async function(req, res) {
             });
         }
 
+        if (!interview.domain) {
+            interview.domain = interview.roleTitle || "General Technical";
+        }
         interview.lastHeartbeatAt = new Date();
         await interview.save();
 
@@ -673,6 +788,255 @@ exports.heartbeat = async function(req, res) {
             alive: true,
             status: interview.status,
             remainingSeconds: Math.max(0, Math.floor((new Date(interview.startedAt).getTime() + (interview.durationSeconds * 1000) - Date.now()) / 1000))
+        });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+exports.getActiveInterview = async function(req, res) {
+    try {
+        const userId = req.user._id;
+
+        // 1. Check standard interviews for active, unfinished attempts
+        const standardInterviews = await Interview.find({
+            candidateId: userId,
+            status: "in-progress"
+        }).sort({ updatedAt: -1, startedAt: -1 });
+
+        for (const interview of standardInterviews) {
+            // Check if expired
+            if (isSessionExpired(interview)) {
+                interview.status = "submitted";
+                interview.submittedAt = new Date();
+                interview.autoSubmittedReason = "auto-submitted: time expired";
+                await interview.save();
+                processEvaluation(interview, interview.responses, "auto-submitted: time expired").catch(() => {});
+                continue;
+            }
+
+            const elapsed = Math.floor((Date.now() - new Date(interview.startedAt).getTime()) / 1000);
+            const remainingSeconds = Math.max(0, (interview.durationSeconds || 1800) - elapsed);
+            const remainingMinutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+
+            const totalQuestions = interview.responses?.length || 0;
+            const answeredCount = (interview.responses || []).filter(
+                r => (r.userAnswer && r.userAnswer.trim()) || (r.code && r.code.trim())
+            ).length;
+
+            return res.status(200).json({
+                hasActive: true,
+                interview: {
+                    id: interview._id,
+                    type: "standard",
+                    roleTitle: interview.roleTitle,
+                    domain: interview.domain,
+                    assessmentType: interview.assessmentType,
+                    remainingSeconds,
+                    remainingMinutes,
+                    totalQuestions,
+                    answeredCount,
+                    startedAt: interview.startedAt
+                }
+            });
+        }
+
+        // 2. Check adaptive interviews for active, unfinished attempts
+        const AdaptiveInterview = require("../models/adaptive_interview_schema");
+        const adaptiveInterviews = await AdaptiveInterview.find({
+            candidateId: userId,
+            status: "in-progress"
+        }).sort({ updatedAt: -1, startedAt: -1 });
+
+        for (const adaptive of adaptiveInterviews) {
+            if (adaptive.startedAt && adaptive.durationSeconds) {
+                const deadline = new Date(adaptive.startedAt).getTime() + (adaptive.durationSeconds * 1000);
+                if (Date.now() > deadline) {
+                    adaptive.status = "submitted";
+                    adaptive.submittedAt = new Date();
+                    adaptive.autoSubmittedReason = "auto-submitted: time expired";
+                    await adaptive.save();
+                    continue;
+                }
+            }
+
+            const elapsed = Math.floor((Date.now() - new Date(adaptive.startedAt).getTime()) / 1000);
+            const remainingSeconds = Math.max(0, (adaptive.durationSeconds || 1800) - elapsed);
+            const remainingMinutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+
+            return res.status(200).json({
+                hasActive: true,
+                interview: {
+                    id: adaptive._id,
+                    type: "adaptive",
+                    roleTitle: adaptive.roleTitle || "Adaptive Assessment",
+                    domain: adaptive.domain || "Adaptive Track",
+                    remainingSeconds,
+                    remainingMinutes,
+                    totalQuestions: adaptive.targetQuestionCount || 5,
+                    answeredCount: adaptive.questionHistory?.length || 0,
+                    startedAt: adaptive.startedAt
+                }
+            });
+        }
+
+        // No active unfinished attempt
+        return res.status(200).json({
+            hasActive: false,
+            interview: null
+        });
+    } catch (err) {
+        console.error("Error in getActiveInterview:", err);
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+exports.saveInterviewProgress = async function(req, res) {
+    try {
+        const { id } = req.params;
+        const { answers, currentIndex } = req.body;
+
+        const interview = await Interview.findOne({
+            _id: id,
+            candidateId: req.user._id,
+            status: "in-progress"
+        });
+
+        if (!interview) {
+            return res.status(404).json({ message: "Active interview session not found or already submitted" });
+        }
+
+        if (isSessionExpired(interview)) {
+            interview.status = "submitted";
+            interview.submittedAt = new Date();
+            interview.autoSubmittedReason = "auto-submitted: time expired";
+            await interview.save();
+            return res.status(400).json({ message: "Session time has expired", expired: true });
+        }
+
+        if (answers && typeof answers === "object") {
+            // answers can be an array of answers or a map { [index]: { text, code, language } }
+            if (Array.isArray(answers)) {
+                answers.forEach((ans, idx) => {
+                    if (interview.responses[idx]) {
+                        if (ans.userAnswer !== undefined) interview.responses[idx].userAnswer = ans.userAnswer;
+                        if (ans.text !== undefined) interview.responses[idx].userAnswer = ans.text;
+                        if (ans.code !== undefined) interview.responses[idx].code = ans.code;
+                        if (ans.language !== undefined) interview.responses[idx].language = ans.language;
+                    }
+                });
+            } else {
+                Object.keys(answers).forEach((idxStr) => {
+                    const idx = parseInt(idxStr, 10);
+                    const ans = answers[idxStr];
+                    if (interview.responses[idx]) {
+                        if (ans.text !== undefined) interview.responses[idx].userAnswer = ans.text;
+                        if (ans.userAnswer !== undefined) interview.responses[idx].userAnswer = ans.userAnswer;
+                        if (ans.code !== undefined) interview.responses[idx].code = ans.code;
+                        if (ans.language !== undefined) interview.responses[idx].language = ans.language;
+                    }
+                });
+            }
+        }
+
+        if (!interview.domain) {
+            interview.domain = interview.roleTitle || "General Technical";
+        }
+        interview.lastHeartbeatAt = new Date();
+        await interview.save();
+
+        return res.status(200).json({ message: "Progress saved successfully" });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+exports.getPendingInterviews = async function(req, res) {
+    try {
+        const candidateId = req.user._id;
+        const pendingList = await Interview.find({
+            candidateId,
+            status: "pending"
+        }).sort({ createdAt: -1 });
+
+        const formatted = pendingList.map(item => ({
+            id: item._id,
+            _id: item._id,
+            roleTitle: item.roleTitle,
+            domain: item.domain,
+            assessmentType: item.assessmentType,
+            durationMinutes: Math.round((item.durationSeconds || 1800) / 60),
+            questionCount: item.responses?.length || 5,
+            assignedAt: item.createdAt
+        }));
+
+        return res.status(200).json({
+            count: formatted.length,
+            pendingAssessments: formatted
+        });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+exports.startPendingInterview = async function(req, res) {
+    try {
+        const { id } = req.params;
+        const interview = await Interview.findOne({
+            _id: id,
+            candidateId: req.user._id,
+            status: "pending"
+        });
+
+        if (!interview) {
+            return res.status(404).json({ message: "Pending assessment not found or already started" });
+        }
+
+        interview.status = "in-progress";
+        interview.startedAt = new Date();
+        interview.lastHeartbeatAt = new Date();
+        await interview.save();
+
+        return res.status(200).json({
+            message: "Assessment started successfully",
+            interviewId: interview._id,
+            roleTitle: interview.roleTitle
+        });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+exports.assignInterview = async function(req, res) {
+    try {
+        const { candidateId, roleTitle, domain, assessmentType = "theory", durationSeconds = 1800, limit = 5 } = req.body;
+        const targetCandidateId = candidateId || req.user._id;
+
+        // Fetch questions for this assessment
+        const questions = await Question.find({
+            role: { $regex: new RegExp(roleTitle, "i") },
+            status: "approved"
+        }).limit(Number(limit) || 5);
+
+        const initialResponses = questions.map(q => ({
+            questionId: q._id,
+            questionText: q.questionText,
+            userAnswer: ""
+        }));
+
+        const newPending = await Interview.create({
+            candidateId: targetCandidateId,
+            roleTitle: roleTitle || "Frontend Developer",
+            domain: domain || "General Technical",
+            assessmentType,
+            status: "pending",
+            durationSeconds: Number(durationSeconds) || 1800,
+            responses: initialResponses
+        });
+
+        return res.status(201).json({
+            message: "Assessment assigned successfully as pending",
+            assessment: newPending
         });
     } catch (err) {
         return res.status(500).json({ message: err.message });

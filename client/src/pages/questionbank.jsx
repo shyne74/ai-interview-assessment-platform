@@ -1,308 +1,372 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import api from "../utils/api";
 
 export default function QuestionBank() {
-    const [folders, setFolders] = useState([]);
-    const [selectedFolder, setSelectedFolder] = useState(null);
+    const [searchParams] = useSearchParams();
+    const initialStatus = searchParams.get("status") || "all";
+
+    // Folders / Roles
+    const [roles, setRoles] = useState([]);
+    const [selectedRole, setSelectedRole] = useState("all");
+
+    // Questions State (Server-side paginated)
     const [questions, setQuestions] = useState([]);
-    const [selectedQuestion, setSelectedQuestion] = useState(null);
+    const [totalQuestions, setTotalQuestions] = useState(0);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
     const [loading, setLoading] = useState(true);
-    const [actionToast, setActionToast] = useState("");
-    const [errorToast, setErrorToast] = useState("");
-    const [processing, setProcessing] = useState(false);
+
+    // Selected Question for Detail View
+    const [selectedQuestion, setSelectedQuestion] = useState(null);
 
     // Filters & Search
     const [searchTerm, setSearchTerm] = useState("");
-    const [statusFilter, setStatusFilter] = useState("all"); // "all" | "approved" | "pending" | "rejected"
+    const [statusFilter, setStatusFilter] = useState(initialStatus);
     const [difficultyFilter, setDifficultyFilter] = useState("all");
 
-    // Add Question Modal state
+    // Multi-select rows
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [bulkProcessing, setBulkProcessing] = useState(false);
+
+    // Toast & Error Notifications
+    const [actionToast, setActionToast] = useState("");
+    const [errorToast, setErrorToast] = useState("");
+
+    // Modal: New Question
     const [addModalOpen, setAddModalOpen] = useState(false);
-    const [newQuestionText, setNewQuestionText] = useState("");
+    const [newText, setNewText] = useState("");
     const [newRole, setNewRole] = useState("Backend Developer");
     const [newDomain, setNewDomain] = useState("Architecture");
     const [newDifficulty, setNewDifficulty] = useState("medium");
-    const [newType, setNewType] = useState("theory");
+    const [newType, setNewType] = useState("technical");
+    const [newAssessmentType, setNewAssessmentType] = useState("theory");
     const [newIdealAnswer, setNewIdealAnswer] = useState("");
-    const [addingQuestion, setAddingQuestion] = useState(false);
+    const [newKeypoints, setNewKeypoints] = useState(["Core Principles"]);
+    const [keypointInput, setKeypointInput] = useState("");
+    const [newMaxScore, setNewMaxScore] = useState(10);
+    const [newTimeLimit, setNewTimeLimit] = useState(180);
+    const [savingNew, setSavingNew] = useState(false);
 
-    // Edit Question Modal state
+    // Modal: Edit Question
     const [editModalOpen, setEditModalOpen] = useState(false);
-    const [editQuestionText, setEditQuestionText] = useState("");
-    const [editDomain, setEditDomain] = useState("");
-    const [editDifficulty, setEditDifficulty] = useState("medium");
-    const [editIdealAnswer, setEditIdealAnswer] = useState("");
+    const [editQuestion, setEditQuestion] = useState(null);
     const [savingEdit, setSavingEdit] = useState(false);
 
-    // Fetch folder summary and questions on mount
-    const loadBankData = async () => {
+    // Modal: Delete Confirmation
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [questionToDelete, setQuestionToDelete] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+
+    // 1. Fetch Roles for folder counts
+    const fetchRoles = async () => {
         try {
-            setLoading(true);
-            const [summaryRes, questionsRes] = await Promise.all([
-                api.get("/question/folders/summary"),
-                api.get("/question")
-            ]);
-
-            const rawFolders = summaryRes.data.folders || [];
-            const allQuestions = Array.isArray(questionsRes.data) ? questionsRes.data : questionsRes.data.questions || [];
-
-            const mappedFolders = rawFolders.map((f, idx) => {
-                const pending = f.pendingCount || 0;
-                const statusText = pending > 0 ? `${pending} need review` : "All valid";
-                const badgeColor = pending > 0 ? "#fef3c7" : "#ecfdf5";
-                const textColor = pending > 0 ? "#b45309" : "#059669";
-                return {
-                    id: `folder-${idx}`,
-                    role: f.role,
-                    name: f.role,
-                    count: `${f.totalQuestions || 0} questions`,
-                    detail: `${f.theoryCount || 0} theory · ${f.codingCount || 0} coding`,
-                    status: statusText,
-                    badgeColor,
-                    textColor,
-                    pendingCount: pending
-                };
-            });
-
-            setFolders(mappedFolders);
-            if (mappedFolders.length > 0 && !selectedFolder) {
-                setSelectedFolder(mappedFolders[0]);
-            }
-
-            // Map all questions
-            const mappedQuestions = allQuestions.map((q) => {
-                let validation = "Valid";
-                if (q.status === "pending") validation = "Needs review";
-                else if (q.status === "rejected") validation = "Invalid";
-
-                return {
-                    id: q._id,
-                    _id: q._id,
-                    title: q.questionText || "Untitled question",
-                    domain: `${q.role || "General"} · ${q.domain || "Theory"}`,
-                    domainOnly: q.domain || "General",
-                    role: q.role || "General",
-                    difficulty: q.difficulty ? (q.difficulty.charAt(0).toUpperCase() + q.difficulty.slice(1).toLowerCase()) : "Medium",
-                    status: q.status || "approved",
-                    validation,
-                    idealAnswer: q.idealAnswer || "Ideal answer structured for accurate grading.",
-                    keyPoints: q.keyPoints || ["Core concept explanation", "Performance trade-offs", "Edge case coverage"],
-                    maxScore: 10,
-                    timeLimit: q.timeLimit || 180,
-                    type: q.assessmentType || (q.type === "coding" ? "Coding" : "Theory"),
-                    raw: q
-                };
-            });
-
-            setQuestions(mappedQuestions);
-            if (mappedQuestions.length > 0 && !selectedQuestion) {
-                setSelectedQuestion(mappedQuestions[0]);
+            const res = await api.get("/roles");
+            const list = res.data.roles || [];
+            setRoles(list);
+            if (list.length > 0 && !newRole) {
+                setNewRole(list[0].title);
             }
         } catch (err) {
-            console.error("Failed to load question bank:", err);
+            console.error("Failed to load roles for question bank:", err);
+        }
+    };
+
+    useEffect(() => {
+        fetchRoles();
+    }, []);
+
+    // 2. Fetch Questions from server (debounced for search)
+    const fetchQuestions = async () => {
+        setLoading(true);
+        setErrorToast("");
+        try {
+            const params = new URLSearchParams();
+            if (statusFilter !== "all") params.append("status", statusFilter);
+            if (selectedRole !== "all") params.append("role", selectedRole);
+            if (difficultyFilter !== "all") params.append("difficulty", difficultyFilter);
+            if (searchTerm.trim()) params.append("search", searchTerm.trim());
+            params.append("page", currentPage);
+            params.append("limit", 15);
+
+            const res = await api.get(`/question?${params.toString()}`);
+            const data = res.data;
+
+            if (Array.isArray(data)) {
+                setQuestions(data);
+                setTotalQuestions(data.length);
+                setTotalPages(1);
+                if (data.length > 0 && (!selectedQuestion || !data.find(q => q._id === selectedQuestion._id))) {
+                    setSelectedQuestion(data[0]);
+                }
+            } else if (data && Array.isArray(data.questions)) {
+                setQuestions(data.questions);
+                setTotalQuestions(data.total || 0);
+                setTotalPages(data.totalPages || 1);
+                if (data.questions.length > 0 && (!selectedQuestion || !data.questions.find(q => q._id === selectedQuestion._id))) {
+                    setSelectedQuestion(data.questions[0]);
+                }
+            } else {
+                setQuestions([]);
+                setTotalQuestions(0);
+                setTotalPages(1);
+            }
+        } catch (err) {
+            console.error("Failed to load questions:", err);
             setErrorToast("Failed to fetch questions from server.");
         } finally {
             setLoading(false);
         }
     };
 
+    // Debounce search
     useEffect(() => {
-        loadBankData();
-    }, []);
+        const timer = setTimeout(() => {
+            fetchQuestions();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm, statusFilter, difficultyFilter, selectedRole, currentPage]);
 
-    // Filter questions by selected folder, search term, status, and difficulty
-    const filteredQuestions = questions.filter((q) => {
-        // Folder filter
-        if (selectedFolder && selectedFolder.role !== "All" && selectedFolder.role) {
-            if (q.role.toLowerCase() !== selectedFolder.role.toLowerCase()) return false;
-        }
-
-        // Search term
-        if (searchTerm.trim()) {
-            const s = searchTerm.toLowerCase();
-            const matchesText = q.title.toLowerCase().includes(s);
-            const matchesDomain = q.domain.toLowerCase().includes(s);
-            const matchesRole = q.role.toLowerCase().includes(s);
-            if (!matchesText && !matchesDomain && !matchesRole) return false;
-        }
-
-        // Status filter
-        if (statusFilter !== "all") {
-            if (statusFilter === "approved" && q.status !== "approved") return false;
-            if (statusFilter === "pending" && q.status !== "pending") return false;
-            if (statusFilter === "rejected" && q.status !== "rejected") return false;
-        }
-
-        // Difficulty filter
-        if (difficultyFilter !== "all") {
-            if (q.difficulty.toLowerCase() !== difficultyFilter.toLowerCase()) return false;
-        }
-
-        return true;
-    });
-
-    const handleApprove = async () => {
-        if (!selectedQuestion) return;
-        setProcessing(true);
-        setErrorToast("");
-        try {
-            await api.patch(`/question/${selectedQuestion.id}/approve`);
-            setActionToast(`Question approved and published to bank.`);
-            setQuestions((prev) =>
-                prev.map((q) => (q.id === selectedQuestion.id ? { ...q, validation: "Valid", status: "approved" } : q))
-            );
-            setSelectedQuestion((prev) => ({ ...prev, validation: "Valid", status: "approved" }));
-        } catch (err) {
-            console.error("Failed to approve:", err);
-            setErrorToast(`Error: ${err.response?.data?.message || err.message}`);
-        } finally {
-            setProcessing(false);
-            setTimeout(() => setActionToast(""), 3500);
+    // Handle Checkbox Selection
+    const toggleSelectAll = () => {
+        if (selectedIds.size === questions.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(questions.map(q => q._id)));
         }
     };
 
-    const handleReject = async () => {
-        if (!selectedQuestion) return;
-        setProcessing(true);
-        setErrorToast("");
-        try {
-            await api.patch(`/question/${selectedQuestion.id}/rejected`);
-            setActionToast(`Question flagged as rejected.`);
-            setQuestions((prev) =>
-                prev.map((q) => (q.id === selectedQuestion.id ? { ...q, validation: "Invalid", status: "rejected" } : q))
-            );
-            setSelectedQuestion((prev) => ({ ...prev, validation: "Invalid", status: "rejected" }));
-        } catch (err) {
-            console.error("Failed to reject:", err);
-            setErrorToast(`Error: ${err.response?.data?.message || err.message}`);
-        } finally {
-            setProcessing(false);
-            setTimeout(() => setActionToast(""), 3500);
-        }
+    const toggleSelectRow = (id, e) => {
+        e.stopPropagation();
+        const next = new Set(selectedIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setSelectedIds(next);
     };
 
-    const handleDeleteQuestion = async (qId) => {
-        if (!window.confirm("Are you sure you want to permanently delete this question?")) {
-            return;
+    // Single Question Actions: Approve
+    const handleApprove = async (question) => {
+        const prevStatus = question.status;
+        // Optimistic UI update
+        setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: "approved" } : q));
+        if (selectedQuestion?._id === question._id) {
+            setSelectedQuestion(prev => ({ ...prev, status: "approved" }));
         }
 
         try {
-            await api.delete(`/question/${qId}`);
-            setActionToast("Question deleted from bank.");
-            const remaining = questions.filter(q => q.id !== qId);
-            setQuestions(remaining);
-            if (selectedQuestion && selectedQuestion.id === qId) {
-                setSelectedQuestion(remaining.length > 0 ? remaining[0] : null);
+            await api.patch(`/question/${question._id}/approve`);
+            setActionToast(`Question approved and published.`);
+            fetchRoles();
+        } catch (err) {
+            // Rollback on error
+            setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: prevStatus } : q));
+            if (selectedQuestion?._id === question._id) {
+                setSelectedQuestion(prev => ({ ...prev, status: prevStatus }));
             }
+            setErrorToast(err.response?.data?.message || "Failed to approve question.");
+        } finally {
+            setTimeout(() => setActionToast(""), 3500);
+        }
+    };
+
+    // Single Question Actions: Reject
+    const handleReject = async (question) => {
+        const prevStatus = question.status;
+        setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: "rejected" } : q));
+        if (selectedQuestion?._id === question._id) {
+            setSelectedQuestion(prev => ({ ...prev, status: "rejected" }));
+        }
+
+        try {
+            await api.patch(`/question/${question._id}/rejected`);
+            setActionToast(`Question moved to rejected status.`);
+            fetchRoles();
         } catch (err) {
-            console.error("Delete question error:", err);
+            setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: prevStatus } : q));
+            if (selectedQuestion?._id === question._id) {
+                setSelectedQuestion(prev => ({ ...prev, status: prevStatus }));
+            }
+            setErrorToast(err.response?.data?.message || "Failed to reject question.");
+        } finally {
+            setTimeout(() => setActionToast(""), 3500);
+        }
+    };
+
+    // Single Question Actions: Delete
+    const handleConfirmDelete = async () => {
+        if (!questionToDelete) return;
+        setDeleting(true);
+
+        try {
+            await api.delete(`/question/${questionToDelete._id}`);
+            setActionToast("Question removed from bank.");
+            setDeleteModalOpen(false);
+            setQuestions(prev => prev.filter(q => q._id !== questionToDelete._id));
+            if (selectedQuestion?._id === questionToDelete._id) {
+                setSelectedQuestion(null);
+            }
+            setQuestionToDelete(null);
+            fetchRoles();
+        } catch (err) {
             setErrorToast(err.response?.data?.message || "Failed to delete question.");
         } finally {
+            setDeleting(false);
             setTimeout(() => setActionToast(""), 3500);
         }
     };
 
-    const handleAddQuestionSubmit = async (e) => {
-        e.preventDefault();
-        if (!newQuestionText.trim() || !newIdealAnswer.trim()) {
-            setErrorToast("Question text and ideal answer are required.");
-            return;
+    // Bulk Actions: Approve, Reject, Delete
+    const handleBulkApprove = async () => {
+        if (selectedIds.size === 0) return;
+        setBulkProcessing(true);
+        let successCount = 0;
+        for (const id of selectedIds) {
+            try {
+                await api.patch(`/question/${id}/approve`);
+                successCount++;
+            } catch (err) {
+                console.warn(`Failed to approve ${id}`);
+            }
         }
+        setActionToast(`Approved ${successCount} of ${selectedIds.size} questions.`);
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+        fetchQuestions();
+        fetchRoles();
+        setTimeout(() => setActionToast(""), 4000);
+    };
 
-        setAddingQuestion(true);
+    const handleBulkReject = async () => {
+        if (selectedIds.size === 0) return;
+        setBulkProcessing(true);
+        let successCount = 0;
+        for (const id of selectedIds) {
+            try {
+                await api.patch(`/question/${id}/rejected`);
+                successCount++;
+            } catch (err) {
+                console.warn(`Failed to reject ${id}`);
+            }
+        }
+        setActionToast(`Rejected ${successCount} of ${selectedIds.size} questions.`);
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+        fetchQuestions();
+        fetchRoles();
+        setTimeout(() => setActionToast(""), 4000);
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (!window.confirm(`Permanently delete ${selectedIds.size} selected questions?`)) return;
+        setBulkProcessing(true);
+        let successCount = 0;
+        for (const id of selectedIds) {
+            try {
+                await api.delete(`/question/${id}`);
+                successCount++;
+            } catch (err) {
+                console.warn(`Failed to delete ${id}`);
+            }
+        }
+        setActionToast(`Deleted ${successCount} of ${selectedIds.size} questions.`);
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+        fetchQuestions();
+        fetchRoles();
+        setTimeout(() => setActionToast(""), 4000);
+    };
+
+    // Add Keypoint Chip
+    const handleAddKeypoint = (e) => {
+        if (e.key === "Enter" || e.key === ",") {
+            e.preventDefault();
+            const val = keypointInput.trim().replace(/^,|,$/g, "");
+            if (val && !newKeypoints.includes(val)) {
+                setNewKeypoints([...newKeypoints, val]);
+            }
+            setKeypointInput("");
+        }
+    };
+
+    const handleRemoveKeypoint = (kp) => {
+        setNewKeypoints(newKeypoints.filter(k => k !== kp));
+    };
+
+    // Submit New Question Modal
+    const handleCreateQuestionSubmit = async (e) => {
+        e.preventDefault();
+        if (!newText.trim()) return;
+
+        setSavingNew(true);
         setErrorToast("");
-        setActionToast("");
-
         try {
             const payload = {
-                questionText: newQuestionText.trim(),
+                questionText: newText.trim(),
                 role: newRole,
-                domain: newDomain.trim() || "General",
+                domain: newDomain.trim() || newRole,
                 difficulty: newDifficulty.toLowerCase(),
-                assessmentType: newType,
-                type: newType === "coding" ? "coding" : "technical",
-                idealAnswer: newIdealAnswer.trim(),
-                status: "approved"
+                type: newType,
+                assessmentType: newAssessmentType,
+                idealAnswer: newIdealAnswer.trim() || "Structured answer covering architectural principles and trade-offs.",
+                keypoint: newKeypoints.length > 0 ? newKeypoints : ["Core Principles"],
+                maxscore: Number(newMaxScore) || 10,
+                timeLimit: Number(newTimeLimit) || 180
             };
 
             const res = await api.post("/question", payload);
             const created = res.data.question;
 
-            const mappedNew = {
-                id: created._id,
-                _id: created._id,
-                title: created.questionText,
-                domain: `${created.role} · ${created.domain}`,
-                domainOnly: created.domain,
-                role: created.role,
-                difficulty: created.difficulty.charAt(0).toUpperCase() + created.difficulty.slice(1).toLowerCase(),
-                status: "approved",
-                validation: "Valid",
-                idealAnswer: created.idealAnswer,
-                keyPoints: ["Core concept explanation", "Performance trade-offs", "Edge case coverage"],
-                maxScore: 10,
-                timeLimit: 180,
-                type: created.assessmentType || "Theory",
-                raw: created
-            };
-
-            setQuestions([mappedNew, ...questions]);
-            setSelectedQuestion(mappedNew);
+            setActionToast("New question created successfully.");
             setAddModalOpen(false);
-            setNewQuestionText("");
+            setNewText("");
             setNewIdealAnswer("");
-            setActionToast("New question added to bank successfully.");
+            setNewKeypoints(["Core Principles"]);
+            fetchQuestions();
+            fetchRoles();
         } catch (err) {
-            console.error("Add question error:", err);
             setErrorToast(err.response?.data?.message || "Failed to create question.");
         } finally {
-            setAddingQuestion(false);
+            setSavingNew(false);
             setTimeout(() => setActionToast(""), 4000);
         }
     };
 
+    // Open Edit Modal
     const handleOpenEditModal = (q) => {
-        setSelectedQuestion(q);
-        setEditQuestionText(q.title);
-        setEditDomain(q.domainOnly || "General");
-        setEditDifficulty(q.difficulty.toLowerCase());
-        setEditIdealAnswer(q.idealAnswer);
+        setEditQuestion({
+            _id: q._id,
+            questionText: q.questionText,
+            role: q.role,
+            domain: q.domain,
+            difficulty: q.difficulty,
+            type: q.type || "technical",
+            assessmentType: q.assessmentType || "theory",
+            idealAnswer: q.idealAnswer || "",
+            maxscore: q.maxscore || 10,
+            timeLimit: q.timeLimit || 180
+        });
         setEditModalOpen(true);
     };
 
-    const handleEditQuestionSubmit = async (e) => {
+    // Submit Edit Modal
+    const handleSaveEditSubmit = async (e) => {
         e.preventDefault();
-        if (!selectedQuestion) return;
+        if (!editQuestion) return;
 
         setSavingEdit(true);
         setErrorToast("");
-
         try {
-            const payload = {
-                questionText: editQuestionText.trim(),
-                domain: editDomain.trim(),
-                difficulty: editDifficulty,
-                idealAnswer: editIdealAnswer.trim()
-            };
+            const res = await api.put(`/question/${editQuestion._id}`, editQuestion);
+            const updated = res.data.question || editQuestion;
 
-            const res = await api.put(`/question/${selectedQuestion.id}`, payload);
-            const updated = res.data.question;
-
-            const updatedMapped = {
-                ...selectedQuestion,
-                title: updated.questionText,
-                domain: `${updated.role} · ${updated.domain}`,
-                domainOnly: updated.domain,
-                difficulty: updated.difficulty.charAt(0).toUpperCase() + updated.difficulty.slice(1).toLowerCase(),
-                idealAnswer: updated.idealAnswer
-            };
-
-            setQuestions(prev => prev.map(q => q.id === selectedQuestion.id ? updatedMapped : q));
-            setSelectedQuestion(updatedMapped);
-            setEditModalOpen(false);
             setActionToast("Question updated successfully.");
+            setEditModalOpen(false);
+            setQuestions(prev => prev.map(q => q._id === updated._id ? { ...q, ...updated } : q));
+            if (selectedQuestion?._id === updated._id) {
+                setSelectedQuestion(prev => ({ ...prev, ...updated }));
+            }
         } catch (err) {
-            console.error("Edit question error:", err);
             setErrorToast(err.response?.data?.message || "Failed to update question.");
         } finally {
             setSavingEdit(false);
@@ -310,14 +374,8 @@ export default function QuestionBank() {
         }
     };
 
-    const getDifficultyPill = (diff) => {
-        if (diff.toLowerCase() === "easy") return "wf-pill wf-pill-green";
-        if (diff.toLowerCase() === "hard" || diff.toLowerCase() === "expert") return "wf-pill wf-pill-red";
-        return "wf-pill wf-pill-yellow";
-    };
-
     return (
-        <div>
+        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
             {/* Breadcrumb */}
             <div className="wf-breadcrumb">
                 <span>Admin</span>
@@ -325,311 +383,529 @@ export default function QuestionBank() {
                 <span style={{ color: "#111827", fontWeight: "600" }}>Question bank</span>
             </div>
 
-            {/* Header + Add Question Action */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+            {/* Header + New Question CTA */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
                 <div>
-                    <h1 className="wf-page-title" style={{ margin: "0 0 6px 0" }}>
-                        Question bank & validation
+                    <h1 className="wf-page-title" style={{ margin: "0 0 4px 0" }}>
+                        Question bank repository
                     </h1>
                     <p className="wf-page-subtitle" style={{ margin: 0 }}>
-                        Review, validate, approve, edit, and organize assessment questions across engineering tracks.
+                        Review, calibrate, approve, and curate assessment questions across engineering role curricula.
                     </p>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => {
-                        setNewRole(selectedFolder?.role || "Backend Developer");
-                        setAddModalOpen(true);
-                    }}
-                    className="wf-btn-primary"
-                >
-                    + Add question
-                </button>
+                <div style={{ display: "flex", gap: "10px" }}>
+                    <Link to="/admin/ai-tools" className="wf-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        <span>⚡</span> AI Tools
+                    </Link>
+                    <button
+                        type="button"
+                        onClick={() => setAddModalOpen(true)}
+                        className="wf-btn-primary"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                        <span>+</span> New question
+                    </button>
+                </div>
             </div>
 
-            {/* Notifications */}
             {actionToast && (
-                <div style={{ padding: "10px 16px", backgroundColor: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", color: "#065f46", fontSize: "13px", fontWeight: "600", marginBottom: "20px" }}>
+                <div style={{ padding: "12px 18px", backgroundColor: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", color: "#065f46", fontSize: "13px", fontWeight: "600", marginBottom: "16px" }}>
                     ✓ {actionToast}
                 </div>
             )}
+
             {errorToast && (
-                <div style={{ padding: "10px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600", marginBottom: "20px" }}>
+                <div style={{ padding: "12px 18px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600", marginBottom: "16px" }}>
                     ⚠ {errorToast}
                 </div>
             )}
 
-            {/* Search & Filter Toolbar */}
-            <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "20px", flexWrap: "wrap" }}>
-                <input
-                    type="text"
-                    placeholder="Search question text or domain..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="wf-input"
-                    style={{ maxWidth: "320px" }}
-                />
+            {/* Bulk Action Toolbar */}
+            {selectedIds.size > 0 && (
+                <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 20px",
+                    backgroundColor: "#1e293b",
+                    borderRadius: "10px",
+                    color: "#ffffff",
+                    marginBottom: "16px",
+                    animation: "fadeIn 0.15s ease"
+                }}>
+                    <div style={{ fontSize: "13px", fontWeight: "600" }}>
+                        {selectedIds.size} {selectedIds.size === 1 ? "question" : "questions"} selected
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                        <button
+                            type="button"
+                            disabled={bulkProcessing}
+                            onClick={handleBulkApprove}
+                            style={{
+                                padding: "6px 14px",
+                                backgroundColor: "#059669",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                cursor: "pointer"
+                            }}
+                        >
+                            Bulk Approve
+                        </button>
+                        <button
+                            type="button"
+                            disabled={bulkProcessing}
+                            onClick={handleBulkReject}
+                            style={{
+                                padding: "6px 14px",
+                                backgroundColor: "#d97706",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                cursor: "pointer"
+                            }}
+                        >
+                            Bulk Reject
+                        </button>
+                        <button
+                            type="button"
+                            disabled={bulkProcessing}
+                            onClick={handleBulkDelete}
+                            style={{
+                                padding: "6px 14px",
+                                backgroundColor: "#dc2626",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                cursor: "pointer"
+                            }}
+                        >
+                            Bulk Delete
+                        </button>
+                    </div>
+                </div>
+            )}
 
-                <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="wf-input"
-                    style={{ maxWidth: "160px", backgroundColor: "#ffffff" }}
-                >
-                    <option value="all">All validation states</option>
-                    <option value="approved">Valid (Approved)</option>
-                    <option value="pending">Needs review (Pending)</option>
-                    <option value="rejected">Invalid (Rejected)</option>
-                </select>
-
-                <select
-                    value={difficultyFilter}
-                    onChange={(e) => setDifficultyFilter(e.target.value)}
-                    className="wf-input"
-                    style={{ maxWidth: "150px", backgroundColor: "#ffffff" }}
-                >
-                    <option value="all">All difficulties</option>
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                </select>
-
-                <span style={{ fontSize: "12px", color: "#6b7280", marginLeft: "auto" }}>
-                    Showing {filteredQuestions.length} of {questions.length} questions
-                </span>
-            </div>
-
-            {/* 3-Column Layout: Folders | Questions Table | Inspector Panel */}
-            <div style={{ display: "grid", gridTemplateColumns: "240px 1.4fr 1.1fr", gap: "20px", alignItems: "start" }}>
-                {/* Column 1: Role Folders */}
+            {/* 3-Column Workspace: Left Role Folders, Center Table, Right Detail Panel */}
+            <div style={{ display: "grid", gridTemplateColumns: "240px 1.4fr 1fr", gap: "20px", alignItems: "start" }}>
+                {/* 1. Left Column: Role Folders */}
                 <div className="wf-card" style={{ padding: "16px" }}>
                     <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
-                        Role Tracks
+                        ROLE CURRICULA
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <button
+                            type="button"
+                            onClick={() => { setSelectedRole("all"); setCurrentPage(1); }}
+                            style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                padding: "10px 12px",
+                                borderRadius: "8px",
+                                border: "none",
+                                backgroundColor: selectedRole === "all" ? "#f0f7ff" : "transparent",
+                                color: selectedRole === "all" ? "#1e40af" : "#374151",
+                                fontWeight: selectedRole === "all" ? "700" : "500",
+                                fontSize: "13px",
+                                textAlign: "left",
+                                cursor: "pointer"
+                            }}
+                        >
+                            <span>📁 All Roles</span>
+                            <span style={{ fontSize: "11px", color: "#6b7280", backgroundColor: "#e2e8f0", padding: "2px 6px", borderRadius: "10px" }}>
+                                {roles.reduce((sum, r) => sum + (r.questions || r.questionCount || 0), 0)}
+                            </span>
+                        </button>
+
+                        {roles.map(r => (
+                            <button
+                                key={r._id || r.title}
+                                type="button"
+                                onClick={() => { setSelectedRole(r.title); setCurrentPage(1); }}
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "10px 12px",
+                                    borderRadius: "8px",
+                                    border: "none",
+                                    backgroundColor: selectedRole === r.title ? "#f0f7ff" : "transparent",
+                                    color: selectedRole === r.title ? "#1e40af" : "#374151",
+                                    fontWeight: selectedRole === r.title ? "700" : "500",
+                                    fontSize: "13px",
+                                    textAlign: "left",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: "6px" }}>
+                                    {r.title}
+                                </span>
+                                <span style={{ fontSize: "11px", color: "#6b7280", backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: "10px" }}>
+                                    {r.questions ?? r.questionCount ?? 0}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* 2. Center Column: Filters & Questions Table */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {/* Search & Filter Bar */}
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                        <input
+                            type="text"
+                            placeholder="Search questions by text or concept..."
+                            value={searchTerm}
+                            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                            className="wf-input"
+                            style={{ flex: 1, minWidth: "200px" }}
+                        />
+
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                            className="wf-input"
+                            style={{ width: "auto", minWidth: "120px", backgroundColor: "#ffffff" }}
+                        >
+                            <option value="all">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+
+                        <select
+                            value={difficultyFilter}
+                            onChange={(e) => { setDifficultyFilter(e.target.value); setCurrentPage(1); }}
+                            className="wf-input"
+                            style={{ width: "auto", minWidth: "120px", backgroundColor: "#ffffff" }}
+                        >
+                            <option value="all">All Difficulty</option>
+                            <option value="easy">Easy</option>
+                            <option value="medium">Medium</option>
+                            <option value="hard">Hard</option>
+                        </select>
+                    </div>
+
+                    {/* Table Card */}
+                    <div className="wf-card" style={{ padding: 0, overflow: "hidden" }}>
                         {loading ? (
-                            <div style={{ fontSize: "12px", color: "#6b7280", padding: "10px" }}>Loading folders...</div>
+                            <div style={{ padding: "40px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                                Loading question repository...
+                            </div>
+                        ) : questions.length === 0 ? (
+                            <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                                <div style={{ fontSize: "28px", marginBottom: "8px" }}>📋</div>
+                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#111827", marginBottom: "4px" }}>
+                                    No questions found
+                                </div>
+                                <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "14px" }}>
+                                    Try adjusting your filters or add a new question to this track.
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setAddModalOpen(true)}
+                                    className="wf-btn-primary"
+                                    style={{ fontSize: "12px", padding: "7px 14px" }}
+                                >
+                                    + Add Question
+                                </button>
+                            </div>
                         ) : (
-                            folders.map((folder) => {
-                                const isSelected = selectedFolder && selectedFolder.role === folder.role;
-                                return (
-                                    <div
-                                        key={folder.id}
-                                        onClick={() => setSelectedFolder(folder)}
-                                        style={{
-                                            padding: "10px 12px",
-                                            borderRadius: "6px",
-                                            cursor: "pointer",
-                                            backgroundColor: isSelected ? "#f3f4f6" : "transparent",
-                                            borderLeft: isSelected ? "3px solid #111827" : "3px solid transparent"
-                                        }}
-                                    >
-                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2px" }}>
-                                            <span style={{ fontSize: "13px", fontWeight: isSelected ? "700" : "600", color: "#111827" }}>
-                                                {folder.name}
-                                            </span>
-                                            <span
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                                <thead>
+                                    <tr style={{ borderBottom: "1.5px solid #e5e7eb", backgroundColor: "#f9fafb", textAlign: "left", color: "#6b7280", fontSize: "11px", textTransform: "uppercase" }}>
+                                        <th style={{ padding: "10px 14px", width: "36px" }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.size === questions.length && questions.length > 0}
+                                                onChange={toggleSelectAll}
+                                            />
+                                        </th>
+                                        <th style={{ padding: "10px 12px" }}>Question</th>
+                                        <th style={{ padding: "10px 12px" }}>Domain</th>
+                                        <th style={{ padding: "10px 12px" }}>Difficulty</th>
+                                        <th style={{ padding: "10px 12px" }}>Status</th>
+                                        <th style={{ padding: "10px 12px" }}>Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {questions.map(q => {
+                                        const isSelected = selectedQuestion?._id === q._id;
+                                        const isChecked = selectedIds.has(q._id);
+                                        const status = (q.status || "approved").toLowerCase();
+
+                                        return (
+                                            <tr
+                                                key={q._id}
+                                                onClick={() => setSelectedQuestion(q)}
                                                 style={{
-                                                    fontSize: "10px",
-                                                    fontWeight: "600",
-                                                    padding: "1px 6px",
-                                                    borderRadius: "4px",
-                                                    backgroundColor: folder.badgeColor,
-                                                    color: folder.textColor
+                                                    borderBottom: "1px solid #f3f4f6",
+                                                    cursor: "pointer",
+                                                    backgroundColor: isSelected ? "#f0f7ff" : isChecked ? "#fefce8" : "#ffffff",
+                                                    transition: "background-color 0.1s ease"
                                                 }}
                                             >
-                                                {folder.status}
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: "11px", color: "#6b7280" }}>
-                                            {folder.count} · {folder.detail}
-                                        </div>
-                                    </div>
-                                );
-                            })
+                                                <td style={{ padding: "10px 14px" }} onClick={(e) => toggleSelectRow(q._id, e)}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={(e) => toggleSelectRow(q._id, e)}
+                                                    />
+                                                </td>
+                                                <td style={{ padding: "10px 12px", maxWidth: "260px" }}>
+                                                    <div style={{
+                                                        fontWeight: "600",
+                                                        color: "#111827",
+                                                        overflow: "hidden",
+                                                        textOverflow: "ellipsis",
+                                                        whiteSpace: "nowrap"
+                                                    }}>
+                                                        {q.questionText}
+                                                    </div>
+                                                </td>
+                                                <td style={{ padding: "10px 12px", color: "#4b5563", fontSize: "12px" }}>
+                                                    {q.domain}
+                                                </td>
+                                                <td style={{ padding: "10px 12px" }}>
+                                                    <span style={{
+                                                        fontSize: "11px",
+                                                        fontWeight: "600",
+                                                        color: q.difficulty === "hard" ? "#991b1b" : q.difficulty === "medium" ? "#92400e" : "#065f46"
+                                                    }}>
+                                                        {(q.difficulty || "medium").toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: "10px 12px" }}>
+                                                    <span style={{
+                                                        padding: "3px 8px",
+                                                        borderRadius: "4px",
+                                                        fontSize: "11px",
+                                                        fontWeight: "700",
+                                                        backgroundColor: status === "approved" ? "#ecfdf5" : status === "pending" ? "#fef3c7" : "#fee2e2",
+                                                        color: status === "approved" ? "#065f46" : status === "pending" ? "#92400e" : "#991b1b"
+                                                    }}>
+                                                        {status.toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: "10px 12px", color: "#6b7280", fontSize: "12px" }}>
+                                                    {q.assessmentType || (q.type === "coding" ? "Coding" : "Theory")}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
+
+                        {/* Pagination footer */}
+                        {!loading && questions.length > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderTop: "1px solid #e5e7eb", fontSize: "12px", color: "#6b7280" }}>
+                                <div>
+                                    Total {totalQuestions} questions
+                                </div>
+                                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                    <button
+                                        type="button"
+                                        disabled={currentPage === 1}
+                                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                        className="wf-btn-outline"
+                                        style={{ padding: "3px 8px", fontSize: "11px", opacity: currentPage === 1 ? 0.5 : 1 }}
+                                    >
+                                        Prev
+                                    </button>
+                                    <span style={{ fontWeight: "700", color: "#111827" }}>
+                                        {currentPage} / {totalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        disabled={currentPage === totalPages}
+                                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                        className="wf-btn-outline"
+                                        style={{ padding: "3px 8px", fontSize: "11px", opacity: currentPage === totalPages ? 0.5 : 1 }}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>
 
-                {/* Column 2: Questions Table */}
-                <div className="wf-card" style={{ padding: "16px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "14px" }}>
-                        <h2 style={{ fontSize: "15px", fontWeight: "700", color: "#111827", margin: 0 }}>
-                            {selectedFolder ? `${selectedFolder.name} questions` : "Questions"}
-                        </h2>
-                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                            {filteredQuestions.length} questions
-                        </span>
+                {/* 3. Right Column: Detailed Question Panel */}
+                <div className="wf-card" style={{ padding: "20px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+                        QUESTION INSPECTION
                     </div>
 
-                    <div style={{ overflowX: "auto", maxHeight: "600px", overflowY: "auto" }}>
-                        <table className="wf-table" style={{ fontSize: "12px" }}>
-                            <thead>
-                                <tr>
-                                    <th>Question</th>
-                                    <th>Difficulty</th>
-                                    <th>Status</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredQuestions.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={4} style={{ padding: "24px", textAlign: "center", color: "#6b7280" }}>
-                                            No questions found matching criteria.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    filteredQuestions.map((q) => {
-                                        const isSelected = selectedQuestion && selectedQuestion.id === q.id;
-                                        return (
-                                            <tr
-                                                key={q.id}
-                                                onClick={() => setSelectedQuestion(q)}
-                                                style={{
-                                                    cursor: "pointer",
-                                                    backgroundColor: isSelected ? "#f8fafc" : "transparent"
-                                                }}
-                                            >
-                                                <td style={{ maxWidth: "260px" }}>
-                                                    <div style={{ fontWeight: "600", color: "#111827", marginBottom: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                        {q.title}
-                                                    </div>
-                                                    <div style={{ fontSize: "11px", color: "#6b7280" }}>
-                                                        {q.domain}
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <span className={getDifficultyPill(q.difficulty)}>
-                                                        {q.difficulty}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        className={q.validation === "Valid" ? "wf-pill wf-pill-green" : q.validation === "Needs review" ? "wf-pill wf-pill-yellow" : "wf-pill wf-pill-red"}
-                                                    >
-                                                        {q.validation}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: "flex", gap: "6px" }}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleOpenEditModal(q);
-                                                            }}
-                                                            style={{ border: "none", backgroundColor: "transparent", color: "#2563eb", cursor: "pointer", fontSize: "11px" }}
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDeleteQuestion(q.id);
-                                                            }}
-                                                            style={{ border: "none", backgroundColor: "transparent", color: "#dc2626", cursor: "pointer", fontSize: "11px" }}
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
+                    {!selectedQuestion ? (
+                        <div style={{ padding: "30px 10px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
+                            Select any question to inspect its ideal answer, scoring rubric, and validation actions.
+                        </div>
+                    ) : (
+                        <div>
+                            {/* Title & Status */}
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+                                <span style={{
+                                    padding: "3px 8px",
+                                    borderRadius: "4px",
+                                    fontSize: "11px",
+                                    fontWeight: "700",
+                                    backgroundColor: selectedQuestion.status === "approved" ? "#ecfdf5" : selectedQuestion.status === "pending" ? "#fef3c7" : "#fee2e2",
+                                    color: selectedQuestion.status === "approved" ? "#065f46" : selectedQuestion.status === "pending" ? "#92400e" : "#991b1b"
+                                }}>
+                                    {(selectedQuestion.status || "approved").toUpperCase()}
+                                </span>
+
+                                {selectedQuestion.isAIGenerated && (
+                                    <span style={{ fontSize: "11px", backgroundColor: "#eff6ff", color: "#1d4ed8", padding: "2px 6px", borderRadius: "4px", fontWeight: "600" }}>
+                                        ✨ AI Calibrated
+                                    </span>
                                 )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* Column 3: Inspector Panel */}
-                <div className="wf-card" style={{ padding: "18px" }}>
-                    {selectedQuestion ? (
-                        <>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
-                                <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                                    INSPECTOR
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => handleOpenEditModal(selectedQuestion)}
-                                    className="wf-btn-outline"
-                                    style={{ padding: "2px 8px", fontSize: "11px" }}
-                                >
-                                    Edit
-                                </button>
                             </div>
 
-                            <h3 style={{ fontSize: "14px", fontWeight: "700", color: "#111827", marginBottom: "12px", lineHeight: 1.4 }}>
-                                {selectedQuestion.title}
+                            <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#111827", lineHeight: "1.4", margin: "0 0 16px 0" }}>
+                                {selectedQuestion.questionText}
                             </h3>
 
-                            {/* Metadata Key-Values */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "12px", borderTop: "1px solid #f3f4f6", borderBottom: "1px solid #f3f4f6", padding: "10px 0", marginBottom: "14px" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                    <span style={{ color: "#6b7280" }}>Track & Domain</span>
-                                    <span style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.domain}</span>
+                            {/* Attributes Grid */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px", fontSize: "12px" }}>
+                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
+                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Role Track</div>
+                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.role}</div>
                                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                    <span style={{ color: "#6b7280" }}>Type</span>
-                                    <span style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.type}</span>
+                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
+                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Domain</div>
+                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.domain}</div>
                                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                    <span style={{ color: "#6b7280" }}>Ideal answer</span>
-                                    <span style={{ fontWeight: "600", color: "#111827" }}>Present</span>
+                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
+                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Format</div>
+                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.assessmentType || "Theory"}</div>
                                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                    <span style={{ color: "#6b7280" }}>Status</span>
-                                    <span style={{ fontWeight: "600", color: selectedQuestion.validation === "Valid" ? "#059669" : "#d97706" }}>
-                                        {selectedQuestion.validation}
-                                    </span>
+                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
+                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Time Limit</div>
+                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.timeLimit || 180}s ({selectedQuestion.maxscore || 10} pts)</div>
                                 </div>
                             </div>
 
-                            {/* Ideal Answer Preview */}
-                            <div style={{ marginBottom: "18px" }}>
-                                <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", marginBottom: "4px" }}>
-                                    Benchmark ideal answer
+                            {/* Key Points Chips */}
+                            {selectedQuestion.keypoint && selectedQuestion.keypoint.length > 0 && (
+                                <div style={{ marginBottom: "16px" }}>
+                                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#4b5563", marginBottom: "6px", textTransform: "uppercase" }}>
+                                        Expected Key Points
+                                    </div>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                                        {selectedQuestion.keypoint.map((kp, idx) => (
+                                            <span key={idx} style={{ backgroundColor: "#f3f4f6", color: "#374151", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>
+                                                • {kp}
+                                            </span>
+                                        ))}
+                                    </div>
                                 </div>
-                                <div style={{ fontSize: "12px", color: "#374151", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "10px", lineHeight: 1.4, maxHeight: "150px", overflowY: "auto" }}>
-                                    {selectedQuestion.idealAnswer}
+                            )}
+
+                            {/* Ideal Reference Answer */}
+                            <div style={{ marginBottom: "20px" }}>
+                                <div style={{ fontSize: "11px", fontWeight: "700", color: "#4b5563", marginBottom: "6px", textTransform: "uppercase" }}>
+                                    Ideal Reference Answer
+                                </div>
+                                <div style={{
+                                    fontSize: "12px",
+                                    lineHeight: "1.5",
+                                    color: "#374151",
+                                    backgroundColor: "#f9fafb",
+                                    padding: "10px 12px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #f3f4f6",
+                                    maxHeight: "140px",
+                                    overflowY: "auto"
+                                }}>
+                                    {selectedQuestion.idealAnswer || "No ideal answer provided."}
                                 </div>
                             </div>
 
-                            {/* Actions: Approve / Reject */}
-                            <div style={{ display: "flex", gap: "8px" }}>
-                                <button
-                                    type="button"
-                                    onClick={handleApprove}
-                                    disabled={processing || selectedQuestion.validation === "Valid"}
-                                    className="wf-btn-green"
-                                    style={{ flex: 1, justifyContent: "center", padding: "6px", cursor: processing ? "not-allowed" : "pointer" }}
-                                >
-                                    Approve
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleReject}
-                                    disabled={processing || selectedQuestion.validation === "Invalid"}
-                                    className="wf-btn-danger"
-                                    style={{ padding: "6px 12px", cursor: processing ? "not-allowed" : "pointer" }}
-                                >
-                                    Reject
-                                </button>
+                            {/* Action Buttons: Approve, Reject, Edit, Delete */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                <div style={{ display: "flex", gap: "8px" }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleApprove(selectedQuestion)}
+                                        style={{
+                                            flex: 1,
+                                            padding: "8px",
+                                            backgroundColor: "#059669",
+                                            color: "#ffffff",
+                                            border: "none",
+                                            borderRadius: "6px",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            cursor: "pointer"
+                                        }}
+                                    >
+                                        ✓ Approve
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleReject(selectedQuestion)}
+                                        style={{
+                                            flex: 1,
+                                            padding: "8px",
+                                            backgroundColor: "#d97706",
+                                            color: "#ffffff",
+                                            border: "none",
+                                            borderRadius: "6px",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            cursor: "pointer"
+                                        }}
+                                    >
+                                        ✕ Reject
+                                    </button>
+                                </div>
+
+                                <div style={{ display: "flex", gap: "8px" }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleOpenEditModal(selectedQuestion)}
+                                        className="wf-btn-outline"
+                                        style={{ flex: 1, padding: "7px", fontSize: "12px" }}
+                                    >
+                                        Edit Details
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setQuestionToDelete(selectedQuestion);
+                                            setDeleteModalOpen(true);
+                                        }}
+                                        style={{
+                                            padding: "7px 12px",
+                                            backgroundColor: "#fef2f2",
+                                            color: "#dc2626",
+                                            border: "1px solid #fecaca",
+                                            borderRadius: "6px",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            cursor: "pointer"
+                                        }}
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
                             </div>
-                        </>
-                    ) : (
-                        <div style={{ padding: "20px", textAlign: "center", color: "#6b7280", fontSize: "12px" }}>
-                            Select a question to inspect details.
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* Modal: Add New Question */}
+            {/* Modal 1: New Question */}
             {addModalOpen && (
                 <div style={{
                     position: "fixed",
@@ -641,27 +917,33 @@ export default function QuestionBank() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    zIndex: 9999,
-                    padding: "20px"
+                    zIndex: 1100,
+                    padding: "16px"
                 }}>
-                    <div className="wf-card" style={{ maxWidth: "540px", width: "100%", padding: "24px", maxHeight: "90vh", overflowY: "auto" }}>
-                        <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
-                            Add Assessment Question
-                        </h2>
-                        <p style={{ fontSize: "13px", color: "#6b7280", marginBottom: "20px" }}>
-                            Create a custom validated technical question and add it directly to the question bank.
-                        </p>
+                    <div className="wf-card" style={{ width: "560px", maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", padding: "28px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                            <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                                Add New Question to Bank
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setAddModalOpen(false)}
+                                style={{ background: "none", border: "none", fontSize: "18px", color: "#9ca3af", cursor: "pointer" }}
+                            >
+                                ✕
+                            </button>
+                        </div>
 
-                        <form onSubmit={handleAddQuestionSubmit}>
+                        <form onSubmit={handleCreateQuestionSubmit}>
                             <div style={{ marginBottom: "14px" }}>
                                 <label className="wf-form-label">Question Text</label>
                                 <textarea
-                                    placeholder="e.g. Explain how database indexing works under the hood and when a composite index is preferred."
-                                    value={newQuestionText}
-                                    onChange={(e) => setNewQuestionText(e.target.value)}
+                                    value={newText}
+                                    onChange={(e) => setNewText(e.target.value)}
+                                    placeholder="Enter full question formulation..."
+                                    rows={3}
+                                    className="wf-input"
                                     required
-                                    className="wf-textarea"
-                                    style={{ minHeight: "80px" }}
                                 />
                             </div>
 
@@ -674,23 +956,20 @@ export default function QuestionBank() {
                                         className="wf-input"
                                         style={{ backgroundColor: "#ffffff" }}
                                     >
-                                        <option>Backend Developer</option>
-                                        <option>Frontend Developer</option>
-                                        <option>Full Stack Developer</option>
-                                        <option>AI/ML Engineer</option>
-                                        <option>System Architect</option>
-                                        <option>DevOps Engineer</option>
+                                        {roles.map(r => (
+                                            <option key={r._id || r.title} value={r.title}>{r.title}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="wf-form-label">Domain Topic</label>
+                                    <label className="wf-form-label">Domain / Topic</label>
                                     <input
                                         type="text"
-                                        placeholder="e.g. Database Indexing"
                                         value={newDomain}
                                         onChange={(e) => setNewDomain(e.target.value)}
-                                        required
+                                        placeholder="e.g. Memory Management"
                                         className="wf-input"
+                                        required
                                     />
                                 </div>
                             </div>
@@ -710,47 +989,94 @@ export default function QuestionBank() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="wf-form-label">Format</label>
+                                    <label className="wf-form-label">Assessment Format</label>
                                     <select
-                                        value={newType}
-                                        onChange={(e) => setNewType(e.target.value)}
+                                        value={newAssessmentType}
+                                        onChange={(e) => setNewAssessmentType(e.target.value)}
                                         className="wf-input"
                                         style={{ backgroundColor: "#ffffff" }}
                                     >
-                                        <option value="theory">Theory / Concepts</option>
-                                        <option value="coding">Coding Challenge</option>
+                                        <option value="theory">Theory</option>
+                                        <option value="coding">Coding</option>
+                                        <option value="mixed">Mixed</option>
                                     </select>
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: "20px" }}>
-                                <label className="wf-form-label">Benchmark Ideal Answer</label>
+                            <div style={{ marginBottom: "14px" }}>
+                                <label className="wf-form-label">Key Points Tag Input (Press Enter or comma to add)</label>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                                    {newKeypoints.map((kp, idx) => (
+                                        <span key={idx} style={{ backgroundColor: "#e2e8f0", color: "#1e293b", padding: "2px 8px", borderRadius: "4px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                            {kp}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveKeypoint(kp)}
+                                                style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: 0 }}
+                                            >
+                                                ✕
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                                <input
+                                    type="text"
+                                    value={keypointInput}
+                                    onChange={(e) => setKeypointInput(e.target.value)}
+                                    onKeyDown={handleAddKeypoint}
+                                    placeholder="Add key concept and press Enter..."
+                                    className="wf-input"
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: "14px" }}>
+                                <label className="wf-form-label">Ideal Reference Answer</label>
                                 <textarea
-                                    placeholder="Provide a comprehensive answer against which AI will grade candidate submissions."
                                     value={newIdealAnswer}
                                     onChange={(e) => setNewIdealAnswer(e.target.value)}
-                                    required
-                                    className="wf-textarea"
-                                    style={{ minHeight: "100px" }}
+                                    placeholder="Explanation against which AI evaluation grades the candidate..."
+                                    rows={3}
+                                    className="wf-input"
                                 />
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+                                <div>
+                                    <label className="wf-form-label">Max Score</label>
+                                    <input
+                                        type="number"
+                                        value={newMaxScore}
+                                        onChange={(e) => setNewMaxScore(e.target.value)}
+                                        className="wf-input"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="wf-form-label">Time Limit (Seconds)</label>
+                                    <input
+                                        type="number"
+                                        value={newTimeLimit}
+                                        onChange={(e) => setNewTimeLimit(e.target.value)}
+                                        className="wf-input"
+                                    />
+                                </div>
                             </div>
 
                             <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                                 <button
                                     type="button"
                                     onClick={() => setAddModalOpen(false)}
-                                    disabled={addingQuestion}
                                     className="wf-btn-outline"
+                                    style={{ padding: "8px 16px" }}
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={addingQuestion}
+                                    disabled={savingNew}
                                     className="wf-btn-primary"
-                                    style={{ cursor: addingQuestion ? "not-allowed" : "pointer" }}
+                                    style={{ padding: "8px 20px" }}
                                 >
-                                    {addingQuestion ? "Adding..." : "Add to Question Bank"}
+                                    {savingNew ? "Saving..." : "Add to Bank"}
                                 </button>
                             </div>
                         </form>
@@ -758,8 +1084,8 @@ export default function QuestionBank() {
                 </div>
             )}
 
-            {/* Modal: Edit Question */}
-            {editModalOpen && (
+            {/* Modal 2: Edit Question */}
+            {editModalOpen && editQuestion && (
                 <div style={{
                     position: "fixed",
                     top: 0,
@@ -770,45 +1096,51 @@ export default function QuestionBank() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    zIndex: 9999,
-                    padding: "20px"
+                    zIndex: 1100,
+                    padding: "16px"
                 }}>
-                    <div className="wf-card" style={{ maxWidth: "540px", width: "100%", padding: "24px", maxHeight: "90vh", overflowY: "auto" }}>
-                        <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
-                            Edit Question
-                        </h2>
-                        <p style={{ fontSize: "13px", color: "#6b7280", marginBottom: "20px" }}>
-                            Modify the question statement, target domain, or grading benchmark.
-                        </p>
+                    <div className="wf-card" style={{ width: "540px", maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", padding: "28px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                            <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                                Edit Question Details
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setEditModalOpen(false)}
+                                style={{ background: "none", border: "none", fontSize: "18px", color: "#9ca3af", cursor: "pointer" }}
+                            >
+                                ✕
+                            </button>
+                        </div>
 
-                        <form onSubmit={handleEditQuestionSubmit}>
+                        <form onSubmit={handleSaveEditSubmit}>
                             <div style={{ marginBottom: "14px" }}>
                                 <label className="wf-form-label">Question Text</label>
                                 <textarea
-                                    value={editQuestionText}
-                                    onChange={(e) => setEditQuestionText(e.target.value)}
+                                    value={editQuestion.questionText}
+                                    onChange={(e) => setEditQuestion({ ...editQuestion, questionText: e.target.value })}
+                                    rows={3}
+                                    className="wf-input"
                                     required
-                                    className="wf-textarea"
-                                    style={{ minHeight: "80px" }}
                                 />
                             </div>
 
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
                                 <div>
-                                    <label className="wf-form-label">Domain Topic</label>
+                                    <label className="wf-form-label">Domain</label>
                                     <input
                                         type="text"
-                                        value={editDomain}
-                                        onChange={(e) => setEditDomain(e.target.value)}
-                                        required
+                                        value={editQuestion.domain}
+                                        onChange={(e) => setEditQuestion({ ...editQuestion, domain: e.target.value })}
                                         className="wf-input"
+                                        required
                                     />
                                 </div>
                                 <div>
                                     <label className="wf-form-label">Difficulty</label>
                                     <select
-                                        value={editDifficulty}
-                                        onChange={(e) => setEditDifficulty(e.target.value)}
+                                        value={editQuestion.difficulty}
+                                        onChange={(e) => setEditQuestion({ ...editQuestion, difficulty: e.target.value })}
                                         className="wf-input"
                                         style={{ backgroundColor: "#ffffff" }}
                                     >
@@ -819,36 +1151,88 @@ export default function QuestionBank() {
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: "20px" }}>
-                                <label className="wf-form-label">Benchmark Ideal Answer</label>
+                            <div style={{ marginBottom: "14px" }}>
+                                <label className="wf-form-label">Ideal Reference Answer</label>
                                 <textarea
-                                    value={editIdealAnswer}
-                                    onChange={(e) => setEditIdealAnswer(e.target.value)}
-                                    required
-                                    className="wf-textarea"
-                                    style={{ minHeight: "100px" }}
+                                    value={editQuestion.idealAnswer}
+                                    onChange={(e) => setEditQuestion({ ...editQuestion, idealAnswer: e.target.value })}
+                                    rows={3}
+                                    className="wf-input"
                                 />
                             </div>
 
-                            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
                                 <button
                                     type="button"
                                     onClick={() => setEditModalOpen(false)}
-                                    disabled={savingEdit}
                                     className="wf-btn-outline"
+                                    style={{ padding: "8px 16px" }}
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={savingEdit}
-                                    className="wf-btn-green"
-                                    style={{ cursor: savingEdit ? "not-allowed" : "pointer" }}
+                                    className="wf-btn-primary"
+                                    style={{ padding: "8px 20px" }}
                                 >
                                     {savingEdit ? "Saving..." : "Save Changes"}
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal 3: Confirm Delete Question */}
+            {deleteModalOpen && questionToDelete && (
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1100,
+                    padding: "16px"
+                }}>
+                    <div className="wf-card" style={{ width: "420px", maxWidth: "100%", padding: "28px" }}>
+                        <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 12px 0" }}>
+                            Delete Question?
+                        </h2>
+                        <p style={{ fontSize: "13px", color: "#4b5563", lineHeight: "1.5", margin: "0 0 20px 0" }}>
+                            Are you sure you want to permanently remove this question from the repository?
+                        </p>
+                        <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteModalOpen(false)}
+                                className="wf-btn-outline"
+                                style={{ padding: "8px 16px" }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={deleting}
+                                onClick={handleConfirmDelete}
+                                style={{
+                                    padding: "8px 18px",
+                                    fontSize: "13px",
+                                    fontWeight: "600",
+                                    border: "none",
+                                    borderRadius: "8px",
+                                    backgroundColor: "#dc2626",
+                                    color: "#ffffff",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                {deleting ? "Deleting..." : "Confirm Delete"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

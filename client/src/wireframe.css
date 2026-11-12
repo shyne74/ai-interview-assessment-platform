@@ -1,0 +1,495 @@
+/* ==========================================================================
+   AI ASSESS — STRICT WIREFRAME THEME & COMPONENTS
+   Faithful reproduction of all wireframe layouts, typography and navigation
+   ========================================================================== */
+
+/* Layout & Root Canvas */
+.wf-body-canvas {
+  background-color: #f8fafc;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+}
+
+.wf-content-container {
+  max-width: 1380px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  flex: 1;
+}
+
+/* -------------------------------------------------------------
+   Top Navigation Bar (Screens 2, 8, 9, 14, 15, 16, 18, 19, 20)
+   ------------------------------------------------------------- */
+.wf-topbar {
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.wf-topbar-inner {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wf-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.wf-brand-link {
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-brand-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.01em;
+}
+
+.wf-admin-badge {
+  background-color: #1f2937;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-left: -8px;
+}
+
+.wf-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-left: 12px;
+}
+
+.wf-nav-item {
+  color: #4b5563;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 21px 2px;
+  position: relative;
+  transition: color 0.15s ease;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-nav-item:hover {
+  color: #111827;
+}
+
+.wf-nav-item.active {
+  color: #111827;
+  font-weight: 600;
+}
+
+.wf-nav-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background-color: #10b981; /* Emerald green underline */
+  border-radius: 2px 2px 0 0;
+}
+
+.wf-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.wf-search-box {
+  display: flex;
+  align-items: center;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 12px;
+  gap: 8px;
+  width: 170px;
+}
+
+.wf-search-icon {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.wf-search-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: #111827;
+  width: 100%;
+}
+
+.wf-user-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  cursor: pointer;
+}
+
+.wf-user-button:hover {
+  background-color: #f9fafb;
+}
+
+.wf-caret {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.wf-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  min-width: 210px;
+  padding: 6px 0;
+  z-index: 200;
+}
+
+.wf-menu-header {
+  padding: 10px 16px;
+}
+
+.wf-menu-divider {
+  height: 1px;
+  background-color: #e5e7eb;
+  margin: 4px 0;
+}
+
+.wf-menu-item {
+  display: block;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #374151;
+  text-decoration: none;
+  transition: background-color 0.1s ease;
+}
+
+.wf-menu-item:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+/* -------------------------------------------------------------
+   Breadcrumbs & Page Header
+   ------------------------------------------------------------- */
+.wf-breadcrumb {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-breadcrumb a {
+  color: #6b7280;
+  text-decoration: none;
+}
+
+.wf-breadcrumb a:hover {
+  color: #111827;
+}
+
+.wf-page-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.wf-page-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 24px;
+}
+
+/* -------------------------------------------------------------
+   Standard Wireframe Cards & Layouts
+   ------------------------------------------------------------- */
+.wf-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.wf-card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.wf-section-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 16px;
+}
+
+/* Buttons */
+.wf-btn-primary {
+  background-color: #0f172a;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-btn-primary:hover {
+  background-color: #1e293b;
+  color: #ffffff;
+}
+
+.wf-btn-green {
+  background-color: #10b981;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-btn-green:hover {
+  background-color: #059669;
+  color: #ffffff;
+}
+
+.wf-btn-outline {
+  background-color: #ffffff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 15px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-btn-outline:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+  color: #111827;
+}
+
+.wf-btn-danger {
+  background-color: #ffffff;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+  cursor: pointer;
+}
+
+.wf-btn-danger:hover {
+  background-color: #fef2f2;
+}
+
+/* Badges & Pills */
+.wf-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wf-pill-green {
+  background-color: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.wf-pill-yellow {
+  background-color: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+.wf-pill-red {
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.wf-pill-gray {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+}
+
+.wf-pill-blue {
+  background-color: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+/* Stepper Component (Screen 20c) */
+.wf-stepper-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.wf-stepper-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: #ffffff;
+}
+
+.wf-stepper-item.done {
+  background-color: #ffffff;
+}
+
+.wf-stepper-item.in-progress {
+  border-color: #10b981;
+  background-color: #f0fdf4;
+}
+
+.wf-step-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 2px;
+}
+
+.wf-step-status {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.wf-stepper-item.in-progress .wf-step-status {
+  color: #10b981;
+  font-weight: 600;
+}
+
+/* Tables */
+.wf-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.wf-table th {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: #fafafa;
+}
+
+.wf-table td {
+  padding: 14px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+}
+
+.wf-table tr:hover td {
+  background-color: #f9fafb;
+}
+
+/* Inputs & Form Elements */
+.wf-form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 6px;
+}
+
+.wf-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #111827;
+  outline: none;
+}
+
+.wf-input:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+}
+
+.wf-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #111827;
+  outline: none;
+  min-height: 120px;
+  resize: vertical;
+}
+
+.wf-textarea:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+}

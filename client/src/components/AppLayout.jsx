@@ -1,33 +1,27 @@
-import { useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import Sidebar from "./Sidebar";
-import TopBar from "./TopBar";
+import TopNavigation from "./TopNavigation";
+import "../wireframe.css";
 
 export default function AppLayout() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
     const location = useLocation();
+    const path = location.pathname;
 
-    const isAuthPage = location.pathname === "/login" || location.pathname === "/register";
-    const isExamPage = location.pathname.startsWith("/adaptive-interview") || location.pathname.startsWith("/interview");
+    // Authentication and live exam views have their own distraction-free wireframe layouts
+    const isAuthPage = path === "/login" || path === "/register";
+    const isLiveExamPage = (
+        path.startsWith("/interview/") && !path.includes("/rules")
+    ) || path.startsWith("/adaptive-interview");
 
-    if (isAuthPage || isExamPage) {
+    if (isAuthPage || isLiveExamPage) {
         return <Outlet />;
     }
 
     return (
-        <div className="app-layout-root">
-            <Sidebar
-                isOpen={sidebarOpen}
-                onClose={() => setSidebarOpen(false)}
-            />
-            <div className="app-main-wrapper">
-                <TopBar
-                    onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-                />
-                <main className="app-page-container">
-                    <Outlet />
-                </main>
-            </div>
+        <div className="wf-body-canvas">
+            <TopNavigation />
+            <main className="wf-content-container">
+                <Outlet />
+            </main>
         </div>
     );
 }

@@ -8,47 +8,47 @@
 :root, [data-theme="light"] {
   --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   
-  /* Light Mode Palette */
-  --bg-main: #f5f5f7;
-  --bg-sidebar: #fafafa;
+  /* Light Mode Palette - Crisp, High-Contrast Notion/Figma aesthetic */
+  --bg-main: #f8fafc;
+  --bg-sidebar: #ffffff;
   --bg-card: #ffffff;
-  --bg-card-hover: #fcfcfd;
+  --bg-card-hover: #fcfdfe;
   --bg-surface: #ffffff;
   --bg-input: #ffffff;
-  --bg-input-focus: #fafaff;
-  --bg-secondary: #f0f0f4;
-  --bg-overlay: rgba(0, 0, 0, 0.4);
+  --bg-input-focus: #ffffff;
+  --bg-secondary: #f1f5f9;
+  --bg-overlay: rgba(15, 23, 42, 0.5);
 
-  --text-primary: #1a1a1a;
-  --text-secondary: #666666;
-  --text-muted: #999999;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
   --text-inverse: #ffffff;
 
-  --border-subtle: #e5e5e5;
-  --border-card: #e5e5e5;
-  --border-focus: #5b5bff;
+  --border-subtle: #e2e8f0;
+  --border-card: #e2e8f0;
+  --border-focus: #4f46e5;
 
   /* Accents */
-  --primary: #5b5bff;
-  --primary-hover: #4a4aff;
-  --primary-glow: rgba(91, 91, 255, 0.25);
-  --primary-subtle: rgba(91, 91, 255, 0.08);
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-glow: rgba(79, 70, 229, 0.25);
+  --primary-subtle: rgba(79, 70, 229, 0.08);
 
-  --accent-cyan: #00d9ff;
-  --accent-cyan-subtle: rgba(0, 217, 255, 0.12);
-  --accent-emerald: #10b981;
-  --accent-emerald-subtle: rgba(16, 185, 129, 0.12);
-  --accent-amber: #f59e0b;
-  --accent-amber-subtle: rgba(245, 158, 11, 0.12);
-  --accent-rose: #f43f5e;
-  --accent-rose-subtle: rgba(244, 63, 94, 0.12);
+  --accent-cyan: #0891b2;
+  --accent-cyan-subtle: rgba(8, 145, 178, 0.1);
+  --accent-emerald: #059669;
+  --accent-emerald-subtle: rgba(5, 150, 105, 0.1);
+  --accent-amber: #d97706;
+  --accent-amber-subtle: rgba(217, 119, 6, 0.1);
+  --accent-rose: #e11d48;
+  --accent-rose-subtle: rgba(225, 29, 72, 0.1);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-  --shadow-glow: 0 0 16px rgba(91, 91, 255, 0.2);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px -6px rgba(15, 23, 42, 0.12), 0 8px 12px -4px rgba(15, 23, 42, 0.06);
+  --shadow-glow: 0 0 18px rgba(79, 70, 229, 0.2);
 
-  --grid-dot-color: rgba(91, 91, 255, 0.06);
+  --grid-dot-color: rgba(79, 70, 229, 0.07);
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -57,31 +57,31 @@
 }
 
 [data-theme="dark"] {
-  /* Dark Mode Palette */
-  --bg-main: #0a0a0b;
-  --bg-sidebar: #111113;
-  --bg-card: #18181b;
-  --bg-card-hover: #202024;
-  --bg-surface: #141416;
-  --bg-input: #111113;
-  --bg-input-focus: #18181f;
-  --bg-secondary: #27272a;
-  --bg-overlay: rgba(0, 0, 0, 0.75);
+  /* Dark Mode Palette - Deep, Radiant, High-Contrast */
+  --bg-main: #0b0f19;
+  --bg-sidebar: #0e1424;
+  --bg-card: #131b2e;
+  --bg-card-hover: #172138;
+  --bg-surface: #101726;
+  --bg-input: #0f172a;
+  --bg-input-focus: #141e36;
+  --bg-secondary: #1a233a;
+  --bg-overlay: rgba(3, 7, 18, 0.85);
 
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-inverse: #1a1a1a;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-inverse: #0f172a;
 
-  --border-subtle: #27272a;
-  --border-card: #27272a;
-  --border-focus: #5b5bff;
+  --border-subtle: #1e293b;
+  --border-card: #22304d;
+  --border-focus: #6366f1;
 
   /* Accents */
-  --primary: #5b5bff;
-  --primary-hover: #4a4aff;
-  --primary-glow: rgba(91, 91, 255, 0.35);
-  --primary-subtle: rgba(91, 91, 255, 0.15);
+  --primary: #6366f1;
+  --primary-hover: #818cf8;
+  --primary-glow: rgba(99, 102, 241, 0.4);
+  --primary-subtle: rgba(99, 102, 241, 0.15);
 
   --accent-cyan: #00d9ff;
   --accent-cyan-subtle: rgba(0, 217, 255, 0.15);
@@ -92,17 +92,17 @@
   --accent-rose: #f43f5e;
   --accent-rose-subtle: rgba(244, 63, 94, 0.15);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 24px rgba(91, 91, 255, 0.35);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.65);
+  --shadow-glow: 0 0 24px rgba(99, 102, 241, 0.35);
 
-  --grid-dot-color: rgba(91, 91, 255, 0.08);
+  --grid-dot-color: rgba(99, 102, 241, 0.09);
 }
 
 /* ==========================================================================
-   GLOBAL RESET & BASE STYLES
-   Smooth 0.3s Theme Fade Transition
+   GLOBAL RESET & HIGH-CONTRAST TYPOGRAPHY HIERARCHY
+   Eliminates all washed out or buried text in both themes
    ========================================================================== */
 
 * {
@@ -131,15 +131,53 @@ body {
   background-size: 24px 24px;
 }
 
-/* Dynamic text color adapter */
-[data-theme="light"] .text-white {
+/* High-Contrast Universal Text Utilities (Overrides Bootstrap defaults) */
+.text-main,
+.text-primary-custom {
   color: var(--text-primary) !important;
 }
-/* Keep white text inside primary buttons and badges */
-.btn-primary-gradient .text-white,
-.btn-primary .text-white,
-.hero-interview-card .text-white,
-.badge-tech.badge-indigo .text-white {
+
+.text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+.text-muted {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="light"] .text-light {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-light {
+  color: #f1f5f9 !important;
+}
+
+/* In light mode, automatically map text-white inside light cards to text-primary */
+[data-theme="light"] .glass-card h1.text-white,
+[data-theme="light"] .glass-card h2.text-white,
+[data-theme="light"] .glass-card h3.text-white,
+[data-theme="light"] .glass-card h4.text-white,
+[data-theme="light"] .glass-card h5.text-white,
+[data-theme="light"] .glass-card h6.text-white,
+[data-theme="light"] .glass-card .fw-bold.text-white,
+[data-theme="light"] .practice-card h5.text-white,
+[data-theme="light"] .step-guide-card h6.text-white,
+[data-theme="light"] #roles-section h3.text-white {
+  color: var(--text-primary) !important;
+}
+
+/* Keep pure white text on primary buttons, badges, and dark surfaces */
+.btn-primary-gradient,
+.btn-primary-gradient *,
+.btn-primary,
+.btn-primary *,
+.hero-interview-card,
+.hero-interview-card *,
+.badge-tech.badge-indigo,
+.badge-tech.badge-rejected,
+.badge.bg-emerald-500,
+.badge.bg-indigo-500 {
   color: #ffffff !important;
 }
 
@@ -1170,148 +1208,122 @@ button:active, .btn:active {
 }
 
 /* ==========================================================================
-   UNIFIED ASSESSMENT LAUNCHPAD
+   UNIFIED ASSESSMENT LAUNCHPAD (Command Center Aesthetics)
+   Stays high-contrast, radiant, and dark in both Light & Dark modes
    ========================================================================== */
 
 .unified-launcher-card {
-  background: linear-gradient(135deg, rgba(30, 27, 75, 0.92) 0%, rgba(20, 20, 45, 0.97) 100%);
-  border: 1px solid rgba(99, 102, 241, 0.28);
-  border-radius: var(--radius-xl);
-  color: #ffffff !important;
-  box-shadow: 0 12px 30px -8px rgba(30, 27, 75, 0.5), 0 0 20px rgba(99, 102, 241, 0.12);
+  background: linear-gradient(140deg, #0e1227 0%, #171b40 45%, #0b0e22 100%) !important;
+  border: 1px solid rgba(99, 102, 241, 0.35) !important;
+  border-radius: var(--radius-xl) !important;
+  color: #f8fafc !important;
+  box-shadow: 0 16px 40px -10px rgba(10, 14, 34, 0.6), 0 0 25px rgba(99, 102, 241, 0.15) !important;
   position: relative;
   overflow: hidden;
 }
 
-.engine-tab-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--text-secondary);
-  border-radius: var(--radius-md);
-  padding: 0.55rem 1.1rem;
-  font-weight: 600;
-  font-size: 0.88rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
-  cursor: pointer;
+/* Force crystal-clear high contrast inside unified-launcher-card */
+.unified-launcher-card h2,
+.unified-launcher-card .launcher-title,
+.unified-launcher-card .text-white {
+  color: #ffffff !important;
+  font-weight: 800;
 }
 
-.engine-tab-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+.unified-launcher-card p,
+.unified-launcher-card .launcher-subtitle,
+.unified-launcher-card .text-muted {
+  color: #cbd5e1 !important;
 }
 
-.engine-tab-btn.active {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.35) 0%, rgba(139, 92, 246, 0.35) 100%);
-  border-color: #818cf8;
-  color: #ffffff;
-  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+.unified-launcher-card label,
+.unified-launcher-card .form-label,
+.unified-launcher-card .text-secondary {
+  color: #e2e8f0 !important;
 }
 
-/* How It Works Card for First-Time Users */
-.step-guide-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-lg);
-  padding: 1.15rem;
-  height: 100%;
-  transition: all 0.25s ease;
+.unified-launcher-card .launcher-hint,
+.unified-launcher-card .small.text-muted {
+  color: #94a3b8 !important;
 }
 
-.step-guide-card:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(99, 102, 241, 0.4);
-  transform: translateY(-2px);
+.unified-launcher-card input.form-control-custom,
+.unified-launcher-card input.form-control {
+  background: rgba(8, 12, 28, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
 }
 
-.step-badge-number {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.85rem;
-  background: rgba(99, 102, 241, 0.2);
-  color: #a5b4fc;
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  margin-bottom: 0.75rem;
+.unified-launcher-card input.form-control-custom:focus,
+.unified-launcher-card input.form-control:focus {
+  background: rgba(8, 12, 28, 0.98) !important;
+  border-color: #818cf8 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.45) !important;
+  color: #ffffff !important;
 }
 
-/* Callout banner for Adaptive Exam Hub */
-.adaptive-promo-banner {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem 1.5rem;
-  transition: all 0.2s ease;
-}
-
-.adaptive-promo-banner:hover {
-  border-color: rgba(245, 158, 11, 0.45);
-  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.12);
+.unified-launcher-card input.form-control-custom::placeholder,
+.unified-launcher-card input.form-control::placeholder {
+  color: #64748b !important;
 }
 
 .preset-chip {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #cbd5e1;
-  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #e2e8f0 !important;
+  font-size: 0.82rem;
   font-weight: 500;
-  padding: 0.38rem 0.85rem;
+  padding: 0.42rem 0.95rem;
   border-radius: 9999px;
   cursor: pointer;
   transition: all 0.18s ease;
 }
 
 .preset-chip:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.35);
   transform: translateY(-1px);
 }
 
 .preset-chip.active {
-  background: #6366f1;
-  color: #ffffff;
-  border-color: #a5b4fc;
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.45);
+  background: #6366f1 !important;
+  border-color: #a5b4fc !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.6);
 }
 
 .domain-pill {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
-  font-size: 0.78rem;
-  padding: 0.32rem 0.72rem;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #cbd5e1 !important;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.78rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .domain-pill:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .domain-pill.active {
-  background: rgba(0, 217, 255, 0.18);
-  border-color: #00d9ff;
-  color: #00d9ff;
-  font-weight: 600;
+  background: rgba(0, 217, 255, 0.25) !important;
+  border-color: #00d9ff !important;
+  color: #00e5ff !important;
+  font-weight: 700;
 }
 
 .option-pill-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #cbd5e1;
-  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e2e8f0 !important;
+  font-size: 0.82rem;
   font-weight: 600;
-  padding: 0.45rem 0.8rem;
+  padding: 0.55rem 0.85rem;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.18s ease;
@@ -1320,13 +1332,121 @@ button:active, .btn:active {
 }
 
 .option-pill-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff !important;
 }
 
 .option-pill-btn.active {
-  background: linear-gradient(135deg, #5b5bff 0%, #4a4aff 100%);
-  border-color: #7b7bff;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(91, 91, 255, 0.4);
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+  border-color: #818cf8 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.5);
+}
+
+/* Beginner-Friendly 3-Step Guide Cards */
+.step-guide-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.4rem;
+  height: 100%;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.25s ease;
+}
+
+.step-guide-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.step-guide-card h6 {
+  color: var(--text-primary) !important;
+  font-weight: 700;
+}
+
+.step-guide-card p {
+  color: var(--text-secondary) !important;
+  line-height: 1.55;
+}
+
+.step-badge-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.88rem;
+  background: rgba(99, 102, 241, 0.18);
+  color: #6366f1;
+  border: 1.5px solid rgba(99, 102, 241, 0.35);
+  margin-bottom: 0.75rem;
+}
+
+[data-theme="dark"] .step-badge-number {
+  color: #a5b4fc;
+}
+
+/* Callout banner for Adaptive Exam Hub */
+.adaptive-promo-banner {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(99, 102, 241, 0.12) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem 1.6rem;
+  transition: all 0.2s ease;
+}
+
+.adaptive-promo-banner:hover {
+  border-color: rgba(245, 158, 11, 0.55);
+  box-shadow: 0 6px 24px rgba(245, 158, 11, 0.15);
+}
+
+.adaptive-promo-banner h5 {
+  color: var(--text-primary) !important;
+}
+
+.adaptive-promo-banner p {
+  color: var(--text-secondary) !important;
+}
+
+/* HUD Navigation Link */
+.hud-nav-link {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+  font-weight: 600;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hud-nav-link:hover {
+  background: var(--primary-subtle) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  transform: translateX(4px);
+}
+
+/* High-Contrast Code Problem Details & Test Case Boxes */
+.code-spec-box {
+  background: rgba(15, 23, 42, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #e2e8f0 !important;
+}
+
+.code-spec-box .spec-title {
+  font-weight: 700;
+}
+
+.code-spec-box .spec-text {
+  color: #cbd5e1 !important;
+  font-family: var(--font-main);
+  line-height: 1.6;
+}
+
+.code-sample-box {
+  background: rgba(10, 15, 30, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #f1f5f9 !important;
 }

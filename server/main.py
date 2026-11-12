@@ -20,7 +20,7 @@ groq_api_key = os.getenv("GROQ_API_KEY")
 if not groq_api_key:
    print("warning: the api key is not present")
 
-client = Groq(api_key=groq_api_key)
+client = Groq(api_key=groq_api_key, timeout=20.0, max_retries=2)
 
 # Ordered list of models to try. If one hits rate limit / OTPM cap, fall back automatically.
 MODELS_TO_TRY = [
@@ -104,6 +104,32 @@ def extract_pdf_smart_text(reader: PdfReader, max_chars: int = 8000):
                 continue
 
     combined_text = "\n\n".join(text_chunks)
+
+    # Scanned PDF Fallback: If no digital text extracted, use OCR on embedded images
+    if len(combined_text.strip()) < 50:
+        try:
+            import io
+            import pytesseract
+            from PIL import Image
+
+            ocr_chunks = []
+            for p_idx in pages_to_sample[:5]:
+                if 0 <= p_idx < total_pages:
+                    try:
+                        page = reader.pages[p_idx]
+                        for img_obj in getattr(page, "images", []):
+                            img = Image.open(io.BytesIO(img_obj.data))
+                            ocr_text = pytesseract.image_to_string(img)
+                            clean_ocr = " ".join(ocr_text.split())
+                            if len(clean_ocr) > 30:
+                                ocr_chunks.append(f"[Scanned Page {p_idx + 1} OCR]: {clean_ocr[:per_page_budget]}")
+                    except Exception as page_ocr_err:
+                        print(f"[OCR] Page {p_idx} error:", page_ocr_err)
+            if ocr_chunks:
+                combined_text = "\n\n".join(ocr_chunks)
+        except Exception as ocr_lib_err:
+            print("[OCR] OCR fallback error:", ocr_lib_err)
+
     return combined_text[:max_chars], total_pages
 
 

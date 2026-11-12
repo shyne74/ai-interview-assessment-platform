@@ -115,6 +115,104 @@ exports.getSubmissions = async function(req, res) {
         })
     }
 }
-// exports.getfunction = async function(req,res){
-    
-// }
+
+exports.getCodingMeta = async function(req, res) {
+    try {
+        const questions = await Question.find({
+            assessmentType: "coding",
+            status: "approved"
+        }).select("difficulty keypoint codingData role domain");
+
+        const tagCounts = {};
+        const difficultyCounts = { easy: 0, medium: 0, hard: 0 };
+        let codeforcesTotal = 0;
+
+        questions.forEach(q => {
+            if (q.codingData?.contestId) codeforcesTotal++;
+            if (q.difficulty && difficultyCounts[q.difficulty] !== undefined) {
+                difficultyCounts[q.difficulty]++;
+            }
+            (q.keypoint || []).forEach(tag => {
+                const cleanTag = tag.trim();
+                if (cleanTag) {
+                    tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
+                }
+            });
+        });
+
+        const topicCategories = [
+            { id: "arrays", label: "Arrays & Two Pointers", tags: ["arrays", "two-pointer technique", "two pointers", "sliding window"] },
+            { id: "strings", label: "Strings", tags: ["strings", "string", "hashing"] },
+            { id: "dp", label: "Dynamic Programming", tags: ["dp", "dynamic programming", "memoization"] },
+            { id: "greedy", label: "Greedy Algorithms", tags: ["greedy", "greedy algorithms"] },
+            { id: "binary-search", label: "Binary Search", tags: ["binary search", "search"] },
+            { id: "data-structures", label: "Data Structures", tags: ["data structures", "hash set", "hashmap", "queue", "stack"] },
+            { id: "math", label: "Math & Number Theory", tags: ["math", "number theory", "combinatorics"] },
+            { id: "sortings", label: "Sorting & Searching", tags: ["sortings", "sorting"] },
+            { id: "recursion", label: "Recursion & Backtracking", tags: ["recursion", "backtracking", "brute force"] },
+            { id: "graphs", label: "Graphs & Trees", tags: ["graphs", "trees", "dfs", "bfs"] }
+        ];
+
+        return res.status(200).json({
+            totalCodingProblems: questions.length,
+            codeforcesTotal,
+            difficultyCounts,
+            tagCounts,
+            topicCategories
+        });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+exports.getCodingProblems = async function(req, res) {
+    try {
+        const { topics, difficulty, limit = 5, requireCodeforces = "false" } = req.query;
+
+        const filter = {
+            assessmentType: "coding",
+            status: "approved"
+        };
+
+        if (requireCodeforces === "true") {
+            filter["codingData.contestId"] = { $exists: true };
+        }
+
+        if (difficulty && difficulty !== "all") {
+            filter.difficulty = difficulty.toLowerCase();
+        }
+
+        if (topics) {
+            const topicList = topics.split(",").map(t => t.trim().toLowerCase());
+            filter.$or = [
+                { keypoint: { $in: topicList.map(t => new RegExp(t, "i")) } },
+                { domain: { $in: topicList.map(t => new RegExp(t, "i")) } }
+            ];
+        }
+
+        let problems = await Question.find(filter)
+            .select("_id questionText role domain difficulty keypoint codingData idealAnswer")
+            .limit(Number(limit) || 5);
+
+        if (problems.length < (Number(limit) || 5)) {
+            const fallbackFilter = {
+                assessmentType: "coding",
+                status: "approved",
+                _id: { $nin: problems.map(p => p._id) }
+            };
+            if (difficulty && difficulty !== "all") {
+                fallbackFilter.difficulty = difficulty.toLowerCase();
+            }
+            const needed = (Number(limit) || 5) - problems.length;
+            const extra = await Question.find(fallbackFilter).limit(needed);
+            problems = [...problems, ...extra];
+        }
+
+        return res.status(200).json({
+            count: problems.length,
+            problems
+        });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};

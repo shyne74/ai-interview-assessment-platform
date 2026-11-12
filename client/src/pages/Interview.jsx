@@ -1,778 +1,1285 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
-import {
-    BrainIcon,
-    ClockIcon,
-    CheckCircleIcon,
-    ArrowRightIcon,
-    ArrowLeftIcon,
-    AlertTriangleIcon,
-    FileTextIcon,
-    SparklesIcon,
-    CodeIcon,
-    ShieldIcon
-} from "../components/icons";
-import Toast from "../components/Toast";
-import { cleanStatement } from "../utils/formatters";
-import { useExamIntegrity } from "../hooks/useExamIntegrity";
 
-function Interview() {
+const SUPPORTED_LANGUAGES = [
+    { id: "javascript", label: "JavaScript (Node.js)", judgeId: 63 },
+    { id: "python", label: "Python 3", judgeId: 71 },
+    { id: "cpp", label: "C++ (GCC)", judgeId: 54 },
+    { id: "java", label: "Java (OpenJDK)", judgeId: 62 }
+];
+
+const LANGUAGE_BOILERPLATES = {
+    javascript: `// JavaScript (Node.js) - Standard I/O
+const fs = require('fs');
+
+function solve() {
+    // Read all input tokens from standard input
+    const input = fs.readFileSync(0, 'utf-8').trim().split(/\\s+/);
+    if (!input || input.length === 0 || input[0] === '') return;
+
+    // TODO: Parse input tokens and implement solution
+    // Example: const n = parseInt(input[0], 10);
+
+    // Print your result to standard output
+}
+
+solve();
+`,
+    python: `# Python 3 - Standard I/O
+import sys
+
+def solve():
+    # Read all input tokens from standard input
+    input_data = sys.stdin.read().split()
+    if not input_data:
+        return
+
+    # TODO: Parse input tokens and implement solution
+    # Example: n = int(input_data[0])
+
+    # Print your result to standard output
+    pass
+
+if __name__ == '__main__':
+    solve()
+`,
+    cpp: `// C++ (GCC) - Fast I/O
+#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+
+using namespace std;
+
+int main() {
+    // Fast I/O operations
+    ios_base::sync_with_stdio(false);
+    cin.tie(NULL);
+
+    // TODO: Read input from cin and implement solution
+    // Example: int n; if (cin >> n) { ... }
+
+    // Print your result to cout
+
+    return 0;
+}
+`,
+    java: `// Java (OpenJDK) - Main class for Judge0
+import java.util.*;
+import java.io.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+
+        // TODO: Read input using scanner and implement solution
+        // Example: if (scanner.hasNextInt()) { int n = scanner.nextInt(); }
+
+        // Print your result to standard output
+    }
+}
+`
+};
+
+export default function Interview() {
     const { id } = useParams();
-    const { state } = useLocation();
     const navigate = useNavigate();
 
-    const [questions, setQuestions] = useState(state?.questions || []);
-    const [loadingSession, setLoadingSession] = useState(questions.length === 0);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [runningCode, setRunningCode] = useState(false);
+    const [codeOutput, setCodeOutput] = useState(null);
+    const [error, setError] = useState("");
+    const [pasteWarning, setPasteWarning] = useState(false);
+    const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+
+    const [interviewData, setInterviewData] = useState(null);
+    const [questions, setQuestions] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [answers, setAnswers] = useState({});
+    const [selectedLanguage, setSelectedLanguage] = useState("javascript");
+    const [secondsLeft, setSecondsLeft] = useState(1800);
 
-    const [answers, setAnswers] = useState(
-        (state?.questions || []).map((q) => ({
-            questionId: q._id,
-            userAnswer: "",
-            code: (q.assessmentType === "coding" || q.type === "coding") ? "" : undefined,
-            language: "javascript",
-            telemetry: {}
-        }))
-    );
-
-    const [remainingSeconds, setRemainingSeconds] = useState(1800);
-    const [showConfirmModal, setShowConfirmModal] = useState(false);
-    const [evaluating, setEvaluating] = useState(false);
-    const [evalStep, setEvalStep] = useState(1);
-    const [toast, setToast] = useState({ show: false, message: "", type: "info" });
-    const [hasStartedFullscreen, setHasStartedFullscreen] = useState(false);
-    const [isReadOnly, setIsReadOnly] = useState(false);
-    const [isSubmitted, setIsSubmitted] = useState(false);
-    const [activeWorkspaceMode, setActiveWorkspaceMode] = useState(null); // null (auto) | "text" | "code"
-
-    const answersRef = useRef(answers);
-    useEffect(() => {
-        answersRef.current = answers;
-    }, [answers]);
-
-    const isSubmittedRef = useRef(isSubmitted);
-    useEffect(() => {
-        isSubmittedRef.current = isSubmitted;
-    }, [isSubmitted]);
-
-    // Auto-submit callback triggered by integrity violation or server expiry
-    const handleAutoSubmit = useCallback(async (reason) => {
-        if (isSubmittedRef.current) return;
-        setIsSubmitted(true);
-        setEvaluating(true);
-        try {
-            await api.post(`/interviews/${id}/submit`, {
-                answers: answersRef.current,
-                reason: reason === "integrity_violation" ? "auto-submitted: integrity violation" : "auto-submitted: time expired"
-            });
-            await api.post(`/results/${id}/analyze`);
-            localStorage.removeItem("activeInterview");
-            navigate(`/results/${id}`, { replace: true });
-        } catch (err) {
-            localStorage.removeItem("activeInterview");
-            navigate(`/results/${id}`, { replace: true });
-        }
-    }, [id, navigate]);
-
-    // Exam integrity hook
-    const integrity = useExamIntegrity({
-        examId: id,
-        examType: "interview",
-        currentQuestionIndex: currentIndex,
-        maxViolations: 2,
-        isCompleted: isSubmitted || isReadOnly,
-        isStarted: hasStartedFullscreen,
-        onAutoSubmit: handleAutoSubmit
+    const [securityModal, setSecurityModal] = useState({
+        open: false,
+        type: "fullscreen_exit",
+        title: "Exam Security Alert",
+        message: "You exited fullscreen mode or navigated away from the assessment.",
+        violationCount: 0,
+        maxAllowed: 3,
+        autoSubmitted: false
     });
 
-    // History guard to lock navigation after submission
+    const heartbeatRef = useRef(null);
+    const lastViolationTimeRef = useRef(0);
+
+    // 1. Fetch Session from Backend
     useEffect(() => {
-        if (isSubmitted || isReadOnly) {
-            window.history.replaceState(null, "", `/results/${id}`);
-            const handlePopState = (e) => {
-                e.preventDefault();
-                navigate(`/results/${id}`, { replace: true });
-            };
-            window.addEventListener("popstate", handlePopState);
-            return () => window.removeEventListener("popstate", handlePopState);
-        }
-    }, [isSubmitted, isReadOnly, id, navigate]);
+        let isMounted = true;
 
-    // Fetch interview session and enforce state
-    useEffect(() => {
-        if (id) {
-            setLoadingSession(true);
-            api.get(`/interviews/${id}`)
-                .then((res) => {
-                    const sessionStatus = res.data?.status || res.data?.interview?.status;
-                    if (sessionStatus === "evaluated" || sessionStatus === "completed" || sessionStatus === "submitted") {
-                        setIsReadOnly(true);
-                        setIsSubmitted(true);
-                        localStorage.removeItem("activeInterview");
-                        navigate(`/results/${id}`, { replace: true });
-                        return;
+        async function fetchInterview() {
+            try {
+                setLoading(true);
+                setError("");
+                const res = await api.get(`/interviews/${id}`);
+                const data = res.data;
+
+                if (!isMounted) return;
+
+                if (data.status === "evaluated" || data.status === "completed") {
+                    navigate(`/results/${id}`, { replace: true });
+                    return;
+                }
+
+                setInterviewData(data.interview);
+                const qList = (data.questions && data.questions.length > 0) ? data.questions : (data.interview?.responses || []);
+                setQuestions(qList);
+
+                // Populate any existing answers with starter code for every supported language
+                const initialAnswers = {};
+                (data.interview?.responses || []).forEach((resp, idx) => {
+                    const lang = resp.language || "javascript";
+                    const codeByLang = {};
+                    SUPPORTED_LANGUAGES.forEach(l => {
+                        codeByLang[l.id] = LANGUAGE_BOILERPLATES[l.id];
+                    });
+                    if (resp.code) {
+                        codeByLang[lang] = resp.code;
                     }
 
-                    // Store active session in localStorage
-                    try {
-                        localStorage.setItem("activeInterview", JSON.stringify({
-                            id,
-                            type: "standard",
-                            roleTitle: res.data?.roleTitle || "Technical Round",
-                            domain: res.data?.domain || "General",
-                            timestamp: Date.now()
-                        }));
-                    } catch (e) {}
-
-                    const loadedQuestions = res.data?.questions || [];
-                    if (loadedQuestions.length > 0) {
-                        setQuestions(loadedQuestions);
-                        setAnswers(
-                            loadedQuestions.map((q) => ({
-                                questionId: q._id,
-                                userAnswer: "",
-                                code: (q.assessmentType === "coding" || q.type === "coding") ? "" : undefined,
-                                language: "javascript",
-                                telemetry: {}
-                            }))
-                        );
-                    }
-
-                    // Server authoritative duration and startedAt
-                    const interviewDoc = res.data?.interview;
-                    if (interviewDoc && interviewDoc.startedAt && interviewDoc.durationSeconds) {
-                        const deadline = new Date(interviewDoc.startedAt).getTime() + (interviewDoc.durationSeconds * 1000);
-                        const left = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
-                        setRemainingSeconds(left);
-                        if (left === 0) {
-                            handleAutoSubmit("time_expired");
-                        }
-                    }
-                })
-                .catch((err) => {
-                    console.error("Failed to load interview session:", err);
-                })
-                .finally(() => {
-                    setLoadingSession(false);
+                    initialAnswers[idx] = {
+                        text: resp.userAnswer || "",
+                        code: resp.code || (LANGUAGE_BOILERPLATES[lang] || ""),
+                        language: lang,
+                        codeByLanguage: codeByLang
+                    };
                 });
+                setAnswers(initialAnswers);
+
+                // Auto-enter fullscreen upon session load
+                try {
+                    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    }
+                } catch (e) {}
+
+                // Calculate server-authoritative remaining time
+                if (data.interview?.startedAt && data.interview?.durationSeconds) {
+                    const elapsed = Math.floor((Date.now() - new Date(data.interview.startedAt).getTime()) / 1000);
+                    const remaining = Math.max(0, data.interview.durationSeconds - elapsed);
+                    setSecondsLeft(remaining);
+                }
+            } catch (err) {
+                console.error("Error fetching interview:", err);
+                if (isMounted) {
+                    setError(err.response?.data?.message || "Could not retrieve the interview session.");
+                }
+            } finally {
+                if (isMounted) setLoading(false);
+            }
         }
+
+        fetchInterview();
+
+        return () => {
+            isMounted = false;
+        };
     }, [id, navigate]);
 
-    // Server-authoritative timer countdown effect
+    // Synchronize selected language when question index changes
     useEffect(() => {
-        if (isSubmitted || isReadOnly || !hasStartedFullscreen) return;
+        const cur = answers[currentIndex];
+        if (cur?.language) {
+            setSelectedLanguage(cur.language);
+        }
+        setCodeOutput(null);
+    }, [currentIndex]);
+
+    // 2. Countdown Timer with Auto-Submit
+    useEffect(() => {
+        if (loading || submitting) return;
 
         const timer = setInterval(() => {
-            setRemainingSeconds((prev) => {
+            setSecondsLeft((prev) => {
                 if (prev <= 1) {
                     clearInterval(timer);
-                    handleAutoSubmit("time_expired");
+                    handleSubmit(true);
                     return 0;
                 }
                 return prev - 1;
             });
         }, 1000);
+
         return () => clearInterval(timer);
-    }, [isSubmitted, isReadOnly, hasStartedFullscreen, handleAutoSubmit]);
+    }, [loading, submitting]);
 
-    // Format timer MM:SS
-    const formatTime = (secs) => {
-        const mins = Math.floor(secs / 60);
-        const remaining = secs % 60;
-        return `${mins.toString().padStart(2, "0")}:${remaining.toString().padStart(2, "0")}`;
+    // 3. Heartbeat & Exam Security Telemetry
+    useEffect(() => {
+        if (loading || submitting) return;
+
+        // Periodic heartbeat every 25s
+        heartbeatRef.current = setInterval(() => {
+            api.post(`/interviews/${id}/heartbeat`).catch(() => {});
+        }, 25000);
+
+        const triggerViolation = async (type, details) => {
+            if (submitting || securityModal.autoSubmitted) return;
+            const now = Date.now();
+            // Debounce duplicate triggers within 2000ms
+            if (now - lastViolationTimeRef.current < 2000) return;
+            lastViolationTimeRef.current = now;
+
+            try {
+                const res = await api.post(`/interviews/${id}/violation`, {
+                    type,
+                    questionIndex: currentIndex,
+                    details: details || `Integrity violation: ${type}`
+                });
+
+                const vCount = res.data?.violationCount || 1;
+                const maxAllowed = res.data?.maxAllowed || 3;
+                const autoSub = !!res.data?.autoSubmitted;
+
+                setSecurityModal({
+                    open: true,
+                    type,
+                    title: autoSub ? "Exam Disqualified & Terminated" : "Exam Security Warning",
+                    violationCount: vCount,
+                    maxAllowed,
+                    autoSubmitted: autoSub,
+                    message: autoSub
+                        ? "Maximum allowed integrity violations exceeded. Your exam has been automatically submitted."
+                        : type === "fullscreen_exit"
+                            ? "You exited fullscreen mode. Proctored exams must be completed strictly in fullscreen."
+                            : type === "tab_switch"
+                                ? "You navigated away from the assessment tab. Leaving the test window is an integrity violation."
+                                : "Assessment window lost focus. Continued switching or multitasking will lead to exam termination."
+                });
+
+                if (autoSub) {
+                    setSubmitting(true);
+                    setTimeout(() => {
+                        navigate(`/results/${id}`, { replace: true });
+                    }, 3000);
+                }
+            } catch (err) {
+                console.warn("Could not log violation to backend:", err);
+                setSecurityModal(prev => ({
+                    ...prev,
+                    open: true,
+                    type,
+                    title: "Exam Security Warning",
+                    message: "Please return to fullscreen immediately to continue your proctored assessment."
+                }));
+            }
+        };
+
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement && !securityModal.autoSubmitted) {
+                triggerViolation("fullscreen_exit", "Candidate exited fullscreen mode");
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.hidden && !securityModal.autoSubmitted) {
+                triggerViolation("tab_switch", "Candidate navigated away from the exam tab");
+            }
+        };
+
+        const handleWindowBlur = () => {
+            if (document.hidden || !document.fullscreenElement || securityModal.autoSubmitted) return;
+            triggerViolation("window_blur", "Assessment window lost focus");
+        };
+
+        document.addEventListener("fullscreenchange", handleFullscreenChange);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        window.addEventListener("blur", handleWindowBlur);
+
+        return () => {
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+            document.removeEventListener("fullscreenchange", handleFullscreenChange);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            window.removeEventListener("blur", handleWindowBlur);
+        };
+    }, [id, currentIndex, loading, submitting, securityModal.autoSubmitted]);
+
+    const formatTimer = (secs) => {
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return `${m}:${s < 10 ? "0" : ""}${s}`;
     };
 
-    const handleAnswerChange = (text, e) => {
-        if (integrity.handleInputKeystroke && e) {
-            integrity.handleInputKeystroke(e);
+    const currentQ = questions[currentIndex] || {};
+    const isCoding = currentQ.assessmentType === "coding" || currentQ.type === "coding";
+
+    const currentAns = answers[currentIndex] || {
+        text: "",
+        code: LANGUAGE_BOILERPLATES[selectedLanguage] || "",
+        language: selectedLanguage,
+        codeByLanguage: {}
+    };
+    const wordCount = currentAns.text.trim() ? currentAns.text.trim().split(/\\s+/).length : 0;
+
+    const answeredCount = Object.values(answers).filter(
+        (a) => (a.text && a.text.trim().length > 0) || (a.code && a.code.trim().length > 0)
+    ).length;
+
+    const handleTextChange = (e) => {
+        setAnswers({
+            ...answers,
+            [currentIndex]: {
+                ...currentAns,
+                text: e.target.value
+            }
+        });
+    };
+
+    const handleLanguageChange = (newLang) => {
+        setSelectedLanguage(newLang);
+        const existingCodeByLang = currentAns.codeByLanguage || {};
+        const updatedCodeByLang = {
+            ...existingCodeByLang,
+            [selectedLanguage]: currentAns.code
+        };
+
+        const nextCode = updatedCodeByLang[newLang] !== undefined
+            ? updatedCodeByLang[newLang]
+            : (LANGUAGE_BOILERPLATES[newLang] || "");
+
+        updatedCodeByLang[newLang] = nextCode;
+
+        setAnswers(prev => ({
+            ...prev,
+            [currentIndex]: {
+                ...currentAns,
+                language: newLang,
+                code: nextCode,
+                codeByLanguage: updatedCodeByLang
+            }
+        }));
+        setCodeOutput(null);
+    };
+
+    const handleCodeChange = (e) => {
+        const val = e.target.value;
+        const existingCodeByLang = currentAns.codeByLanguage || {};
+        setAnswers(prev => ({
+            ...prev,
+            [currentIndex]: {
+                ...currentAns,
+                code: val,
+                language: selectedLanguage,
+                codeByLanguage: {
+                    ...existingCodeByLang,
+                    [selectedLanguage]: val
+                }
+            }
+        }));
+    };
+
+    const handleResetToTemplate = () => {
+        const template = LANGUAGE_BOILERPLATES[selectedLanguage] || "";
+        const existingCodeByLang = currentAns.codeByLanguage || {};
+        setAnswers(prev => ({
+            ...prev,
+            [currentIndex]: {
+                ...currentAns,
+                code: template,
+                language: selectedLanguage,
+                codeByLanguage: {
+                    ...existingCodeByLang,
+                    [selectedLanguage]: template
+                }
+            }
+        }));
+        setCodeOutput(null);
+        setResetConfirmOpen(false);
+    };
+
+    const handleResumeAssessment = async () => {
+        try {
+            if (document.documentElement.requestFullscreen) {
+                await document.documentElement.requestFullscreen();
+            }
+        } catch (e) {
+            console.warn("Fullscreen request error:", e);
         }
-        setAnswers((prev) =>
-            prev.map((item, idx) =>
-                idx === currentIndex ? { ...item, userAnswer: text, telemetry: integrity.getTelemetry() } : item
-            )
-        );
+        setSecurityModal(prev => ({ ...prev, open: false }));
     };
 
-    const currentQuestion = questions[currentIndex];
-    
-    // Accurately determine question type: theory is strictly written text by default
-    const isCodingQuestion = (currentQuestion?.assessmentType === "coding" || Boolean(currentQuestion?.codingData?.samples?.length) || currentQuestion?.type === "coding") && currentQuestion?.assessmentType !== "theory";
-    const effectiveIsCoding = activeWorkspaceMode !== null ? activeWorkspaceMode === "code" : isCodingQuestion;
+    const handlePaste = (e) => {
+        e.preventDefault();
+        setPasteWarning(true);
+        setTimeout(() => setPasteWarning(false), 3500);
 
-    const currentAnswer = answers[currentIndex]?.userAnswer || "";
-    const currentCode = answers[currentIndex]?.code || "";
-    const currentLanguage = answers[currentIndex]?.language || "javascript";
+        api.post(`/interviews/${id}/violation`, {
+            type: "clipboard",
+            questionIndex: currentIndex,
+            details: "External paste attempted into editor"
+        }).catch(() => {});
+    };
 
-    const handleCodeChange = (codeText, e) => {
-        if (integrity.handleInputKeystroke && e) {
-            integrity.handleInputKeystroke(e);
+    // Run Code via Judge0
+    const handleRunCode = async () => {
+        if (!currentAns.code.trim()) {
+            setCodeOutput({ status: "error", message: "Please write some code before executing." });
+            return;
         }
-        setAnswers((prev) =>
-            prev.map((item, idx) =>
-                idx === currentIndex ? { ...item, code: codeText, userAnswer: item.userAnswer || codeText, telemetry: integrity.getTelemetry() } : item
-            )
-        );
-    };
 
-    const handleLanguageChange = (lang) => {
-        setAnswers((prev) =>
-            prev.map((item, idx) =>
-                idx === currentIndex ? { ...item, language: lang } : item
-            )
-        );
-    };
+        setRunningCode(true);
+        setCodeOutput(null);
 
-    const isQuestionAnswered = (idx) => {
-        const item = answers[idx];
-        if (!item) return false;
-        return (item.userAnswer && item.userAnswer.trim().length > 0) || (item.code && item.code.trim().length > 0);
-    };
-
-    const answeredCount = answers.filter((_, idx) => isQuestionAnswered(idx)).length;
-    const progressPercent = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
-
-    const handleSubmitInterview = async () => {
-        setShowConfirmModal(false);
-        setEvaluating(true);
-        setIsSubmitted(true);
-
-        const stepTimer = setInterval(() => {
-            setEvalStep((prev) => (prev < 4 ? prev + 1 : prev));
-        }, 900);
+        const langConfig = SUPPORTED_LANGUAGES.find(l => l.id === selectedLanguage);
+        const judgeLangId = langConfig ? langConfig.judgeId : 63;
 
         try {
-            await api.post(`/interviews/${id}/submit`, {
-                answers
+            const res = await api.post("/coding/submit", {
+                questionId: currentQ._id,
+                languageId: judgeLangId,
+                sourceCode: currentAns.code
             });
 
-            await api.post(`/results/${id}/analyze`);
-
-            localStorage.removeItem("activeInterview");
-            clearInterval(stepTimer);
-            navigate(`/results/${id}`);
+            setCodeOutput({
+                status: "success",
+                data: res.data
+            });
         } catch (err) {
-            clearInterval(stepTimer);
-            setEvaluating(false);
-            const msg = err.response?.data?.message || err.message || "Evaluation failed. Please try submitting again.";
-            setToast({
-                show: true,
-                message: msg,
-                type: "error"
+            setCodeOutput({
+                status: "error",
+                message: err.response?.data?.message || "Execution service unavailable. Your code is still saved for evaluation."
             });
+        } finally {
+            setRunningCode(false);
         }
     };
 
-    if (loadingSession) {
+    // Auto-save candidate progress to server so it is preserved if leaving midway
+    useEffect(() => {
+        if (!id || loading || submitting || !questions.length) return;
+        const saveTimer = setTimeout(() => {
+            api.post(`/interviews/${id}/progress`, {
+                answers,
+                currentIndex
+            }).catch(() => {});
+        }, 1200);
+
+        return () => clearTimeout(saveTimer);
+    }, [answers, currentIndex, id, loading, submitting, questions.length]);
+
+    const handleSaveAndExit = async () => {
+        try {
+            await api.post(`/interviews/${id}/progress`, {
+                answers,
+                currentIndex
+            });
+        } catch (e) {
+            console.error("Error saving progress:", e);
+        }
+        navigate("/dashboard");
+    };
+
+    // Submit Final Exam
+    const handleSubmit = async (auto = false) => {
+        if (submitting) return;
+        setSubmitting(true);
+        setError("");
+
+        try {
+            // Build evaluated responses array
+            const payload = questions.map((q, idx) => {
+                const ans = answers[idx] || {};
+                return {
+                    questionId: q._id,
+                    userAnswer: ans.text || "",
+                    code: ans.code || "",
+                    language: ans.language || "javascript"
+                };
+            });
+
+            // 1. Submit answers to Express backend
+            await api.post(`/interviews/${id}/submit`, {
+                answers: payload,
+                reason: auto ? "auto-submitted: time expired" : "Candidate submitted assessment"
+            });
+
+            // 2. Trigger automated AI deep analysis (skill breakdown, strengths, weak areas)
+            try {
+                await api.post(`/results/${id}/analyze`);
+            } catch (analyzeErr) {
+                console.warn("Analysis trigger notice:", analyzeErr.message);
+            }
+
+            localStorage.removeItem("activeInterviewId");
+
+            // 3. Navigate to submission confirmation screen with history replacement to prevent back loops
+            navigate(`/exam-submitted/${id}`, { replace: true });
+        } catch (err) {
+            console.error("Submission failed:", err);
+            setError(err.response?.data?.message || "Failed to submit assessment. Please retry.");
+            setSubmitting(false);
+        }
+    };
+
+    if (loading) {
         return (
-            <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center p-4">
-                <div className="glass-card p-5 text-center" style={{ maxWidth: "520px" }}>
-                    <div className="spinner-border text-indigo-400 mb-3" style={{ width: "3rem", height: "3rem" }} role="status" />
-                    <h4 className="fw-bold text-white mb-2">Preparing Interview Environment...</h4>
-                    <p className="text-muted small mb-0">Loading calibrated questions and initializing code compiler.</p>
+            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f8fafc" }}>
+                <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "32px", marginBottom: "16px" }}>⏳</div>
+                    <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 6px 0" }}>
+                        Loading your interview session...
+                    </h2>
+                    <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
+                        Retrieving questions and assessment parameters from the server.
+                    </p>
                 </div>
             </div>
         );
     }
 
-    if (questions.length === 0) {
+    if (error && !questions.length) {
         return (
-            <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center p-4">
-                <div className="glass-card p-5 text-center" style={{ maxWidth: "520px" }}>
-                    <AlertTriangleIcon size={44} className="text-amber-400 mb-3" />
-                    <h3 className="fw-bold text-white mb-2">No Active Session Found</h3>
-                    <p className="text-muted small mb-4">
-                        We could not find active questions for this session. Please initiate a new interview from the Candidate Dashboard.
+            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f8fafc" }}>
+                <div style={{ textAlign: "center", maxWidth: "480px", padding: "32px", backgroundColor: "#ffffff", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
+                    <div style={{ fontSize: "32px", color: "#ef4444", marginBottom: "16px" }}>⚠️</div>
+                    <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
+                        Session Error
+                    </h2>
+                    <p style={{ fontSize: "14px", color: "#6b7280", marginBottom: "20px" }}>
+                        {error}
                     </p>
-                    <button
-                        className="btn btn-primary-gradient"
-                        onClick={() => navigate("/dashboard")}
-                    >
-                        Back to Dashboard
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // Gate: Must click button to enter proctored fullscreen environment
-    if (!hasStartedFullscreen) {
-        return (
-            <div className="min-vh-100 tech-grid-bg d-flex align-items-center justify-content-center p-4">
-                <div className="glass-card p-5 text-center" style={{ maxWidth: "560px", background: "rgba(15, 23, 42, 0.95)" }}>
-                    <div
-                        className="pulse-glow d-inline-flex align-items-center justify-content-center rounded-circle mb-4"
-                        style={{ width: "80px", height: "80px", background: "linear-gradient(135deg, #6366f1, #06b6d4)", color: "#fff" }}
-                    >
-                        <ShieldIcon size={40} />
-                    </div>
-                    <h3 className="fw-bold text-white mb-2">Proctored Assessment Environment</h3>
-                    <p className="text-secondary small mb-4">
-                        This exam requires a secure, fullscreen browser environment. Tab switches, exiting fullscreen, window unfocusing, and copy-paste are actively monitored and logged to ensure assessment integrity.
-                    </p>
-
-                    <div className="p-3 rounded-3 text-start mb-4" style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)" }}>
-                        <div className="text-white small fw-semibold mb-2">⚠️ Integrity Policy:</div>
-                        <ul className="text-muted small mb-0 ps-3">
-                            <li>Keep this window in fullscreen throughout the test.</li>
-                            <li>Do not switch tabs or open other applications.</li>
-                            <li>Exceeding 2 integrity violations will automatically submit your exam.</li>
-                        </ul>
-                    </div>
-
-                    <button
-                        className="btn btn-primary-gradient w-100 py-3 fw-bold"
-                        onClick={async () => {
-                            await integrity.enterFullscreen();
-                            setHasStartedFullscreen(true);
-                        }}
-                    >
-                        Start Exam in Fullscreen
-                    </button>
+                    <Link to="/dashboard" className="wf-btn-primary" style={{ textDecoration: "none" }}>
+                        Return to Dashboard
+                    </Link>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-vh-100 tech-grid-bg pb-5">
-            {toast.show && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={() => setToast({ ...toast, show: false })}
-                />
+        <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", display: "flex", flexDirection: "column" }}>
+            {/* Top Bar matching Screen 07 */}
+            <header style={{
+                height: "56px",
+                backgroundColor: "#ffffff",
+                borderBottom: "1px solid #e2e8f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0 32px",
+                boxSizing: "border-box",
+                position: "sticky",
+                top: 0,
+                zIndex: 40
+            }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <div style={{
+                        width: "26px",
+                        height: "26px",
+                        borderRadius: "6px",
+                        backgroundColor: "#2563eb",
+                        color: "#ffffff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: "800",
+                        fontSize: "14px"
+                    }}>
+                        A
+                    </div>
+                    <span style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a" }}>
+                        AI Assess
+                    </span>
+                </div>
+
+                <div style={{ fontSize: "13px", fontWeight: "600", color: "#334155" }}>
+                    {interviewData?.roleTitle || "Technical Screen"} · {interviewData?.assessmentType === "coding" ? "Coding Assessment" : "Standard Interview"}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "13px" }}>
+                    <span style={{
+                        color: secondsLeft < 300 ? "#ef4444" : "#111827",
+                        fontWeight: "700",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px"
+                    }}>
+                        <span>⏱</span> {formatTimer(secondsLeft)} remaining
+                    </span>
+                    <button
+                        type="button"
+                        onClick={handleSaveAndExit}
+                        disabled={submitting}
+                        style={{
+                            backgroundColor: "#f1f5f9",
+                            color: "#334155",
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "6px",
+                            padding: "5px 12px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            cursor: "pointer"
+                        }}
+                    >
+                        Save & Exit
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleSubmit(false)}
+                        disabled={submitting}
+                        style={{
+                            backgroundColor: "#fee2e2",
+                            color: "#991b1b",
+                            border: "1px solid #fecaca",
+                            borderRadius: "6px",
+                            padding: "5px 12px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            cursor: "pointer"
+                        }}
+                    >
+                        End and submit
+                    </button>
+                </div>
+            </header>
+
+            {/* Paste Violation Warning Banner */}
+            {pasteWarning && (
+                <div style={{
+                    backgroundColor: "#fef2f2",
+                    borderBottom: "1px solid #fecaca",
+                    color: "#991b1b",
+                    padding: "10px 32px",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px"
+                }}>
+                    <span>⚠️</span>
+                    <span>Direct pasting is disabled to protect assessment integrity. Please type your response.</span>
+                </div>
             )}
 
-            {/* Violation Warning Modal */}
-            {integrity.showWarningModal && (
-                <div className="modal-backdrop-custom" style={{ zIndex: 10000 }}>
-                    <div className="glass-card p-4 p-md-5 text-center" style={{ maxWidth: "520px", background: "rgba(30, 10, 15, 0.98)", border: "2px solid #ef4444" }}>
-                        <AlertTriangleIcon size={48} className="text-rose-400 mb-3" />
-                        <h4 className="fw-bold text-white mb-2">Integrity Warning Recorded</h4>
-                        <p className="text-white small mb-3">
-                            {integrity.lastViolationMsg}
+            {/* Submitting Fullscreen Overlay */}
+            {submitting && (
+                <div style={{
+                    position: "fixed",
+                    inset: 0,
+                    backgroundColor: "rgba(15, 23, 42, 0.8)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 100,
+                    color: "#ffffff"
+                }}>
+                    <div style={{ textAlign: "center", maxWidth: "420px", padding: "32px" }}>
+                        <div style={{ fontSize: "40px", marginBottom: "16px" }}>⚡</div>
+                        <h2 style={{ fontSize: "20px", fontWeight: "700", marginBottom: "8px" }}>
+                            Evaluating your assessment with AI...
+                        </h2>
+                        <p style={{ fontSize: "14px", color: "#cbd5e1", lineHeight: 1.5 }}>
+                            Analyzing technical knowledge, completeness, algorithmic efficiency, and clarity. Generating detailed feedback report.
                         </p>
-                        <div className="badge-tech badge-rejected mb-4">
-                            Violation {integrity.violationCount} of {integrity.maxViolations} Max Allowed
-                        </div>
-                        <button
-                            className="btn btn-primary-gradient w-100"
-                            onClick={integrity.enterFullscreen}
-                        >
-                            Return to Fullscreen & Resume Exam
-                        </button>
                     </div>
                 </div>
             )}
 
+            {/* Main Exam Area */}
+            <main style={{
+                flex: 1,
+                maxWidth: "1080px",
+                width: "100%",
+                margin: "0 auto",
+                padding: "36px 24px 64px",
+                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                gap: "24px"
+            }}>
+                {/* Question Card */}
+                <div style={{
+                    backgroundColor: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    padding: "32px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                }}>
+                    {/* Progress Header */}
+                    <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "12px",
+                        fontSize: "13px"
+                    }}>
+                        <span style={{ fontWeight: "700", color: "#0f172a" }}>
+                            Question {currentIndex + 1} of {questions.length}
+                        </span>
+                        <span style={{ color: "#64748b" }}>
+                            {answeredCount} of {questions.length} answered
+                        </span>
+                    </div>
 
-            {/* AI Evaluation Loading Overlay */}
-            {evaluating && (
-                <div className="modal-backdrop-custom">
-                    <div className="glass-card p-5 text-center" style={{ maxWidth: "560px", background: "rgba(15, 23, 42, 0.96)" }}>
-                        <div
-                            className="pulse-glow d-inline-flex align-items-center justify-content-center rounded-circle mb-4"
-                            style={{ width: "80px", height: "80px", background: "linear-gradient(135deg, #6366f1, #06b6d4)", color: "#fff" }}
-                        >
-                            <BrainIcon size={40} />
-                        </div>
+                    {/* Progress Bar */}
+                    <div style={{
+                        height: "4px",
+                        backgroundColor: "#e2e8f0",
+                        borderRadius: "2px",
+                        overflow: "hidden",
+                        marginBottom: "24px"
+                    }}>
+                        <div style={{
+                            width: `${((currentIndex + 1) / questions.length) * 100}%`,
+                            height: "100%",
+                            backgroundColor: "#2563eb",
+                            borderRadius: "2px",
+                            transition: "width 0.2s ease"
+                        }} />
+                    </div>
 
-                        <h3 className="fw-bold text-white mb-2">AI Engine Evaluating</h3>
-                        <p className="text-muted small mb-4">
-                            Analyzing technical depth, completeness, syntax concepts, and clarity...
+                    {/* Topic / Difficulty Pills */}
+                    <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                        <span style={{
+                            backgroundColor: "#eff6ff",
+                            color: "#2563eb",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: "6px",
+                            padding: "3px 8px",
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em"
+                        }}>
+                            {currentQ.domain || currentQ.role || "Technical"}
+                        </span>
+                        <span style={{
+                            backgroundColor: "#f1f5f9",
+                            color: "#475569",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "6px",
+                            padding: "3px 8px",
+                            fontSize: "11px",
+                            fontWeight: "600",
+                            textTransform: "capitalize"
+                        }}>
+                            {currentQ.difficulty || "Medium"}
+                        </span>
+                        <span style={{
+                            backgroundColor: isCoding ? "#fef3c7" : "#ecfdf5",
+                            color: isCoding ? "#92400e" : "#065f46",
+                            border: `1px solid ${isCoding ? "#fde68a" : "#a7f3d0"}`,
+                            borderRadius: "6px",
+                            padding: "3px 8px",
+                            fontSize: "11px",
+                            fontWeight: "600"
+                        }}>
+                            {isCoding ? "Coding Challenge" : "Theory & Reasoning"}
+                        </span>
+                    </div>
+
+                    {/* Question Title & Description */}
+                    <h1 style={{
+                        fontSize: "20px",
+                        fontWeight: "700",
+                        color: "#0f172a",
+                        lineHeight: "1.4",
+                        margin: "0 0 10px 0"
+                    }}>
+                        {currentQ.questionText || currentQ.codingData?.title || "Explain your technical solution."}
+                    </h1>
+
+                    {currentQ.codingData?.description && (
+                        <p style={{ fontSize: "14px", color: "#475569", lineHeight: "1.6", margin: "0 0 20px 0" }}>
+                            {currentQ.codingData.description}
                         </p>
+                    )}
 
-                        {/* Step list */}
-                        <div className="d-flex flex-column gap-3 text-start mb-4">
-                            <div className="d-flex align-items-center gap-3">
-                                <div className="rounded-circle p-1" style={{ background: evalStep >= 1 ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.1)" }}>
-                                    <CheckCircleIcon size={16} className={evalStep >= 1 ? "text-emerald-400" : "text-muted"} />
-                                </div>
-                                <span className={`small ${evalStep >= 1 ? "text-white fw-semibold" : "text-muted"}`}>
-                                    Submitting candidate response payload
-                                </span>
-                            </div>
-
-                            <div className="d-flex align-items-center gap-3">
-                                <div className="rounded-circle p-1" style={{ background: evalStep >= 2 ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.1)" }}>
-                                    <CheckCircleIcon size={16} className={evalStep >= 2 ? "text-emerald-400" : "text-muted"} />
-                                </div>
-                                <span className={`small ${evalStep >= 2 ? "text-white fw-semibold" : "text-muted"}`}>
-                                    Evaluating technical accuracy & relevance
-                                </span>
-                            </div>
-
-                            <div className="d-flex align-items-center gap-3">
-                                <div className="rounded-circle p-1" style={{ background: evalStep >= 3 ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.1)" }}>
-                                    <CheckCircleIcon size={16} className={evalStep >= 3 ? "text-emerald-400" : "text-muted"} />
-                                </div>
-                                <span className={`small ${evalStep >= 3 ? "text-white fw-semibold" : "text-muted"}`}>
-                                    Generating feedback & identifying skill gaps
-                                </span>
-                            </div>
-
-                            <div className="d-flex align-items-center gap-3">
-                                <div className="rounded-circle p-1" style={{ background: evalStep >= 4 ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.1)" }}>
-                                    <CheckCircleIcon size={16} className={evalStep >= 4 ? "text-emerald-400" : "text-muted"} />
-                                </div>
-                                <span className={`small ${evalStep >= 4 ? "text-white fw-semibold" : "text-muted"}`}>
-                                    Synthesizing comprehensive scorecard
-                                </span>
-                            </div>
+                    {/* Samples / Constraints if coding */}
+                    {isCoding && currentQ.codingData?.samples?.length > 0 && (
+                        <div style={{ backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "16px", marginBottom: "20px", fontSize: "13px" }}>
+                            <div style={{ fontWeight: "700", color: "#0f172a", marginBottom: "6px" }}>Sample Test Case:</div>
+                            <div style={{ color: "#334155" }}><strong>Input:</strong> <code>{currentQ.codingData.samples[0].input}</code></div>
+                            <div style={{ color: "#334155", marginTop: "4px" }}><strong>Output:</strong> <code>{currentQ.codingData.samples[0].output}</code></div>
                         </div>
+                    )}
 
-                        <div className="progress-container mb-2">
-                            <div
-                                className="progress-bar-custom"
-                                style={{ width: `${(evalStep / 4) * 100}%` }}
-                            />
-                        </div>
-                        <span className="text-muted small">Please do not refresh the page</span>
-                    </div>
-                </div>
-            )}
-
-            {/* Sticky Assessment Sub-Header */}
-            <div
-                className="py-3 px-4 mb-4 border-bottom"
-                style={{ background: "rgba(17, 24, 39, 0.8)", backdropFilter: "blur(12px)", borderColor: "var(--border-subtle)" }}
-            >
-                <div className="container-fluid px-lg-5">
-                    <div className="d-flex flex-wrap justify-content-between align-items-center gap-3">
-                        <div className="d-flex align-items-center gap-3">
-                            <span className="badge-tech badge-indigo">
-                                Technical Assessment
-                            </span>
-                            <span className="text-white fw-semibold small">
-                                {currentQuestion?.role || "Software Engineer"} • {currentQuestion?.domain || "Technical"}
-                            </span>
-                        </div>
-
-                        <div className="d-flex align-items-center gap-4">
-                            {/* Countdown Timer */}
-                            <div className={`d-flex align-items-center gap-2 px-3 py-1 rounded-pill ${remainingSeconds < 300 ? "text-danger border-danger" : "text-secondary"}`} style={{ background: "rgba(255, 255, 255, 0.05)", border: "1px solid var(--border-subtle)" }}>
-                                <ClockIcon size={15} className={remainingSeconds < 300 ? "text-rose-400" : "text-indigo-400"} />
-                                <span className="font-monospace text-white fw-bold small">
-                                    {formatTime(remainingSeconds)} left
-                                </span>
-                            </div>
-
-                            {/* Progress Indicator */}
-                            <div className="d-flex align-items-center gap-2">
-                                <span className="text-muted small">Progress:</span>
-                                <span className="text-white fw-semibold small">
-                                    {answeredCount} / {questions.length} answered
-                                </span>
-                                <div style={{ width: "90px" }} className="progress-container d-none d-sm-block">
-                                    <div
-                                        className="progress-bar-custom"
-                                        style={{ width: `${progressPercent}%` }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Main Content Area */}
-            <div className="container py-2">
-                <div className="row g-4">
-                    {/* Left Question & Answer Area */}
-                    <div className="col-lg-8">
-                        <div className="glass-card p-4 p-md-5 mb-4">
-                            {/* Question Header */}
-                            <div className="d-flex justify-content-between align-items-start mb-3">
-                                <div>
-                                    <div className="d-flex align-items-center gap-2 mb-1">
-                                        <span className="text-muted small fw-semibold text-uppercase">
-                                            Question {currentIndex + 1} of {questions.length}
-                                        </span>
-                                        <span className={`badge-tech ${effectiveIsCoding ? "badge-indigo" : "badge-emerald"}`} style={{ fontSize: "0.72rem" }}>
-                                            {effectiveIsCoding ? "💻 Coding Challenge" : "📖 Theory Question"}
-                                        </span>
-                                    </div>
-                                    <h4 className="fw-bold text-white mt-2 mb-0" style={{ lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                                        {cleanStatement(currentQuestion?.questionText)}
-                                    </h4>
-
-                                    {/* Input / Output specifications if available */}
-                                    {effectiveIsCoding && currentQuestion?.codingData?.inputSpecification && (
-                                        <div className="mt-3 p-3 rounded-3 bg-dark bg-opacity-40 border border-secondary border-opacity-25 small">
-                                            <strong className="text-cyan-300 d-block mb-1">Input Format:</strong>
-                                            <div className="text-muted" style={{ whiteSpace: "pre-wrap" }}>
-                                                {cleanStatement(currentQuestion.codingData.inputSpecification)}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {effectiveIsCoding && currentQuestion?.codingData?.outputSpecification && (
-                                        <div className="mt-2 p-3 rounded-3 bg-dark bg-opacity-40 border border-secondary border-opacity-25 small">
-                                            <strong className="text-emerald-300 d-block mb-1">Output Format:</strong>
-                                            <div className="text-muted" style={{ whiteSpace: "pre-wrap" }}>
-                                                {cleanStatement(currentQuestion.codingData.outputSpecification)}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="d-flex gap-2 flex-shrink-0">
-                                    <span className={`badge-tech ${currentQuestion?.difficulty === "hard" ? "badge-rejected" : currentQuestion?.difficulty === "medium" ? "badge-pending" : "badge-approved"}`}>
-                                        {currentQuestion?.difficulty || "Medium"}
-                                    </span>
-                                    <span className="badge-tech badge-cyan">
-                                        {currentQuestion?.maxscore || 10} pts
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Coding Samples if available */}
-                            {effectiveIsCoding && currentQuestion?.codingData?.samples && currentQuestion.codingData.samples.length > 0 && (
-                                <div className="p-3 rounded-3 mb-3" style={{ background: "rgba(15, 23, 42, 0.6)", border: "1px solid rgba(255, 255, 255, 0.08)" }}>
-                                    <span className="text-secondary small fw-semibold d-block mb-2">Example Cases:</span>
-                                    <div className="row g-2">
-                                        {currentQuestion.codingData.samples.slice(0, 2).map((s, idx) => (
-                                            <div key={idx} className="col-md-6">
-                                                <div className="p-2 rounded bg-black bg-opacity-40 font-monospace small">
-                                                    <span className="text-indigo-300 d-block">Input: {cleanStatement(s.input)}</span>
-                                                    <span className="text-emerald-300 d-block">Output: {cleanStatement(s.output)}</span>
-                                                </div>
-                                            </div>
+                    {/* Answer Area: Coding vs Theory */}
+                    {isCoding ? (
+                        <div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                    <label style={{ fontSize: "13px", fontWeight: "700", color: "#1e293b" }}>
+                                        Language:
+                                    </label>
+                                    <select
+                                        value={selectedLanguage}
+                                        onChange={(e) => handleLanguageChange(e.target.value)}
+                                        style={{
+                                            padding: "6px 12px",
+                                            borderRadius: "6px",
+                                            border: "1px solid #cbd5e1",
+                                            fontSize: "13px",
+                                            fontWeight: "600",
+                                            color: "#1e293b",
+                                            backgroundColor: "#ffffff",
+                                            cursor: "pointer"
+                                        }}
+                                    >
+                                        {SUPPORTED_LANGUAGES.map((lang) => (
+                                            <option key={lang.id} value={lang.id}>
+                                                {lang.label}
+                                            </option>
                                         ))}
-                                    </div>
-                                </div>
-                            )}
+                                    </select>
 
-                            <hr style={{ borderColor: "var(--border-subtle)" }} className="my-4" />
-
-                            {/* Response Input: Coding vs Theory */}
-                            {effectiveIsCoding ? (
-                                <div className="mb-4">
-                                    <div className="d-flex justify-content-between align-items-center mb-2">
-                                        <div className="d-flex align-items-center gap-2">
-                                            <label className="form-label text-secondary small fw-semibold mb-0">
-                                                Coding Workspace
-                                            </label>
-                                            <select
-                                                className="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25"
-                                                style={{ width: "130px", fontSize: "0.8rem" }}
-                                                value={currentLanguage}
-                                                onChange={(e) => handleLanguageChange(e.target.value)}
-                                            >
-                                                <option value="javascript">JavaScript</option>
-                                                <option value="python">Python</option>
-                                                <option value="cpp">C++</option>
-                                                <option value="java">Java</option>
-                                                <option value="typescript">TypeScript</option>
-                                            </select>
-                                        </div>
-                                        <div className="d-flex align-items-center gap-2">
-                                            <button
-                                                type="button"
-                                                className="btn btn-sm btn-link text-indigo-400 p-0 text-decoration-none small"
-                                                onClick={() => setActiveWorkspaceMode("text")}
-                                            >
-                                                Switch to Text Area
-                                            </button>
-                                            <span className="text-muted small">
-                                                • {currentCode.length} chars
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <textarea
-                                        className="form-control form-control-custom font-monospace"
-                                        rows="12"
-                                        placeholder={`// Write your ${currentLanguage} solution here...\nfunction solve(input) {\n    // Implement optimal approach\n    return result;\n}`}
-                                        value={currentCode || currentAnswer}
-                                        onChange={(e) => handleCodeChange(e.target.value, e)}
-                                        onPaste={integrity.handlePaste}
-                                        onCopy={integrity.handleCopyCut}
-                                        onCut={integrity.handleCopyCut}
-                                        style={{ lineHeight: 1.5, fontSize: "0.9rem", background: "rgba(10, 15, 30, 0.9)", color: "#38bdf8" }}
-                                    />
-                                    <div className="d-flex justify-content-between align-items-center mt-2 text-muted small">
-                                        <span>💡 AI evaluates time complexity, edge cases, and algorithmic correctness.</span>
-                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setResetConfirmOpen(true)}
+                                        title="Reset editor for this language to starter template"
+                                        style={{
+                                            padding: "5px 10px",
+                                            borderRadius: "6px",
+                                            border: "1px solid #cbd5e1",
+                                            backgroundColor: "#f8fafc",
+                                            color: "#475569",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            cursor: "pointer",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "4px"
+                                        }}
+                                    >
+                                        <span>↺</span> Reset to Template
+                                    </button>
                                 </div>
-                            ) : (
-                                <div className="mb-4">
-                                    <div className="d-flex justify-content-between align-items-center mb-2">
-                                        <label className="form-label text-secondary small fw-semibold mb-0">
-                                            Your Conceptual & Technical Answer
-                                        </label>
-                                        <div className="d-flex align-items-center gap-2">
-                                            <button
-                                                type="button"
-                                                className="btn btn-sm btn-link text-cyan-400 p-0 text-decoration-none small"
-                                                onClick={() => setActiveWorkspaceMode("code")}
-                                            >
-                                                Switch to Code Editor
-                                            </button>
-                                            <span className="text-muted small">
-                                                • {currentAnswer.trim() ? `${currentAnswer.trim().split(/\s+/).length} words` : "0 words"} ({currentAnswer.length} chars)
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <textarea
-                                        className="form-control form-control-custom font-monospace"
-                                        rows="10"
-                                        placeholder="Type your structured explanation here. Detail underlying principles, core definitions, logical arguments, and nuanced trade-offs..."
-                                        value={currentAnswer}
-                                        onChange={(e) => handleAnswerChange(e.target.value, e)}
-                                        onPaste={integrity.handlePaste}
-                                        onCopy={integrity.handleCopyCut}
-                                        onCut={integrity.handleCopyCut}
-                                        style={{ lineHeight: 1.6, fontSize: "0.925rem" }}
-                                    />
-                                </div>
-                            )}
 
-                            {/* Question Navigation Controls */}
-                            <div className="d-flex justify-content-between align-items-center">
                                 <button
-                                    className="btn btn-secondary-dark"
-                                    onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-                                    disabled={currentIndex === 0}
+                                    type="button"
+                                    onClick={handleRunCode}
+                                    disabled={runningCode}
+                                    style={{
+                                        backgroundColor: "#f0fdf4",
+                                        border: "1px solid #86efac",
+                                        borderRadius: "6px",
+                                        padding: "7px 16px",
+                                        fontSize: "12.5px",
+                                        fontWeight: "700",
+                                        color: "#166534",
+                                        cursor: runningCode ? "not-allowed" : "pointer",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "6px"
+                                    }}
                                 >
-                                    <ArrowLeftIcon size={16} /> Previous
+                                    {runningCode ? "Executing..." : "▶ Run Code (Judge0)"}
                                 </button>
+                            </div>
 
-                                {currentIndex < questions.length - 1 ? (
-                                    <button
-                                        className="btn btn-primary-gradient"
-                                        onClick={() => setCurrentIndex((prev) => Math.min(questions.length - 1, prev + 1))}
-                                    >
-                                        Next Question <ArrowRightIcon size={16} />
-                                    </button>
-                                ) : (
-                                    <button
-                                        className="btn btn-primary-gradient"
-                                        style={{ background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", boxShadow: "0 4px 14px 0 rgba(16, 185, 129, 0.4)" }}
-                                        onClick={() => setShowConfirmModal(true)}
-                                    >
-                                        <CheckCircleIcon size={16} /> Review & Submit
-                                    </button>
-                                )}
+                            <textarea
+                                value={currentAns.code}
+                                onChange={handleCodeChange}
+                                onPaste={handlePaste}
+                                rows={14}
+                                placeholder="// Write your solution here..."
+                                spellCheck={false}
+                                style={{
+                                    width: "100%",
+                                    padding: "16px",
+                                    borderRadius: "10px",
+                                    border: "1px solid #cbd5e1",
+                                    backgroundColor: "#0f172a",
+                                    color: "#f8fafc",
+                                    fontFamily: "Consolas, 'Courier New', Monaco, monospace",
+                                    fontSize: "13.5px",
+                                    lineHeight: "1.55",
+                                    boxSizing: "border-box",
+                                    outline: "none",
+                                    resize: "vertical"
+                                }}
+                            />
+
+                            {/* Execution Output Panel */}
+                            {codeOutput && (
+                                <div style={{
+                                    marginTop: "14px",
+                                    padding: "14px 16px",
+                                    borderRadius: "8px",
+                                    backgroundColor: codeOutput.status === "success" ? "#f0fdf4" : "#fef2f2",
+                                    border: `1px solid ${codeOutput.status === "success" ? "#bbf7d0" : "#fecaca"}`,
+                                    fontSize: "13px"
+                                }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                                        <span style={{
+                                            fontWeight: "700",
+                                            color: codeOutput.status === "success" ? "#065f46" : "#991b1b",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "6px"
+                                        }}>
+                                            <span>{codeOutput.status === "success" ? "✓" : "✕"}</span>
+                                            {codeOutput.data?.submission?.execution?.status || (codeOutput.status === "success" ? "Execution Output" : "Execution Error")}
+                                        </span>
+                                        {codeOutput.data?.submission?.execution?.tests?.[0]?.time && (
+                                            <span style={{ fontSize: "11px", color: "#64748b" }}>
+                                                Time: {codeOutput.data.submission.execution.tests[0].time}s | Mem: {codeOutput.data.submission.execution.tests[0].memory}KB
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {codeOutput.data?.submission?.execution?.tests ? (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                            {codeOutput.data.submission.execution.tests.map((t, idx) => (
+                                                <div key={idx} style={{ padding: "8px 10px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "12px" }}>
+                                                    <div style={{ fontWeight: "600", color: t.status?.id === 3 ? "#16a34a" : "#dc2626", marginBottom: "4px" }}>
+                                                        Test Case #{idx + 1}: {t.status?.description || "Completed"}
+                                                    </div>
+                                                    {t.stdout && (
+                                                        <div style={{ color: "#334155", fontFamily: "monospace" }}>
+                                                            <strong>Output:</strong> {t.stdout}
+                                                        </div>
+                                                    )}
+                                                    {t.compile_output && (
+                                                        <div style={{ color: "#b91c1c", fontFamily: "monospace", whiteSpace: "pre-wrap" }}>
+                                                            <strong>Compiler Output:</strong> {t.compile_output}
+                                                        </div>
+                                                    )}
+                                                    {t.stderr && (
+                                                        <div style={{ color: "#b91c1c", fontFamily: "monospace", whiteSpace: "pre-wrap" }}>
+                                                            <strong>Error:</strong> {t.stderr}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: "12px" }}>
+                                            {codeOutput.message || JSON.stringify(codeOutput.data, null, 2)}
+                                        </pre>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div>
+                            <div style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                marginBottom: "8px"
+                            }}>
+                                <label style={{ fontSize: "13px", fontWeight: "700", color: "#1e293b" }}>
+                                    Your answer
+                                </label>
+                                <span style={{ fontSize: "12px", color: "#94a3b8" }}>
+                                    {wordCount} words
+                                </span>
+                            </div>
+
+                            <textarea
+                                value={currentAns.text}
+                                onChange={handleTextChange}
+                                onPaste={handlePaste}
+                                rows={10}
+                                placeholder="Explain your architectural reasoning, trade-offs, and implementation approach..."
+                                style={{
+                                    width: "100%",
+                                    padding: "16px",
+                                    borderRadius: "10px",
+                                    border: "1px solid #cbd5e1",
+                                    fontSize: "14px",
+                                    lineHeight: "1.6",
+                                    fontFamily: "inherit",
+                                    boxSizing: "border-box",
+                                    outline: "none",
+                                    resize: "vertical"
+                                }}
+                            />
+
+                            <div style={{
+                                fontSize: "12px",
+                                color: "#64748b",
+                                marginTop: "8px"
+                            }}>
+                                Explain your reasoning. A clear partial answer is useful too.
                             </div>
                         </div>
-                    </div>
+                    )}
 
-                    {/* Right Question Selector & Tips Panel */}
-                    <div className="col-lg-4">
-                        {/* Question Navigator Card */}
-                        <div className="glass-card p-4 mb-4">
-                            <h5 className="fw-bold text-white mb-3">
-                                Question Navigation
-                            </h5>
-                            <div className="d-flex flex-wrap gap-2 mb-4">
-                                {questions.map((q, idx) => {
-                                    const isAnswered = answers[idx]?.userAnswer && answers[idx].userAnswer.trim().length > 0;
-                                    const isCurrent = idx === currentIndex;
-
-                                    return (
-                                        <button
-                                            key={q._id || idx}
-                                            className={`btn rounded-3 fw-semibold ${
-                                                isCurrent
-                                                    ? "btn-primary-gradient"
-                                                    : isAnswered
-                                                    ? "btn-secondary-dark text-emerald-400 border-emerald-500"
-                                                    : "btn-secondary-dark"
-                                            }`}
-                                            style={{
-                                                width: "44px",
-                                                height: "44px",
-                                                padding: 0,
-                                                borderColor: !isCurrent && isAnswered ? "rgba(16, 185, 129, 0.4)" : undefined
-                                            }}
-                                            onClick={() => setCurrentIndex(idx)}
-                                        >
-                                            {idx + 1}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            <div className="d-flex flex-column gap-2 text-muted small pt-2 border-top border-secondary border-opacity-25">
-                                <div className="d-flex align-items-center gap-2">
-                                    <span className="rounded-circle" style={{ width: "10px", height: "10px", background: "#6366f1" }} />
-                                    <span>Current Active Question</span>
-                                </div>
-                                <div className="d-flex align-items-center gap-2">
-                                    <span className="rounded-circle" style={{ width: "10px", height: "10px", background: "#10b981" }} />
-                                    <span>Answer Provided</span>
-                                </div>
-                                <div className="d-flex align-items-center gap-2">
-                                    <span className="rounded-circle" style={{ width: "10px", height: "10px", background: "#334155" }} />
-                                    <span>Pending Answer</span>
-                                </div>
-                            </div>
+                    {/* Bottom Action Bar */}
+                    <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginTop: "32px",
+                        paddingTop: "24px",
+                        borderTop: "1px solid #f1f5f9"
+                    }}>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+                                disabled={currentIndex === 0}
+                                style={{
+                                    backgroundColor: "#ffffff",
+                                    border: "1px solid #cbd5e1",
+                                    borderRadius: "8px",
+                                    padding: "9px 16px",
+                                    fontSize: "13px",
+                                    fontWeight: "600",
+                                    color: currentIndex === 0 ? "#94a3b8" : "#334155",
+                                    cursor: currentIndex === 0 ? "not-allowed" : "pointer"
+                                }}
+                            >
+                                ← Previous
+                            </button>
                         </div>
 
-                        {/* AI Scoring Criteria Card */}
-                        <div className="glass-card p-4">
-                            <div className="d-flex align-items-center gap-2 mb-3">
-                                <SparklesIcon size={18} className="text-indigo-400" />
-                                <h5 className="fw-bold text-white mb-0">
-                                    AI Evaluation Criteria
-                                </h5>
-                            </div>
-                            <p className="text-muted small mb-3">
-                                Your answers will be automatically evaluated across 4 core benchmarks:
-                            </p>
-
-                            <div className="d-flex flex-column gap-3">
-                                <div className="p-2 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                    <span className="text-white fw-semibold small d-block">1. Technical Knowledge</span>
-                                    <span className="text-muted" style={{ fontSize: "0.78rem" }}>Accuracy of concepts, frameworks, and syntax</span>
-                                </div>
-                                <div className="p-2 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                    <span className="text-white fw-semibold small d-block">2. Completeness</span>
-                                    <span className="text-muted" style={{ fontSize: "0.78rem" }}>Covers edge cases, trade-offs, and practical examples</span>
-                                </div>
-                                <div className="p-2 rounded-3" style={{ background: "rgba(255, 255, 255, 0.03)" }}>
-                                    <span className="text-white fw-semibold small d-block">3. Relevance & Clarity</span>
-                                    <span className="text-muted" style={{ fontSize: "0.78rem" }}>Directly addresses the prompt with clear reasoning</span>
-                                </div>
-                            </div>
+                        <div style={{ display: "flex", gap: "10px" }}>
+                            {currentIndex < questions.length - 1 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentIndex(currentIndex + 1)}
+                                    style={{
+                                        backgroundColor: "#1e3a8a",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        padding: "10px 20px",
+                                        fontSize: "14px",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "6px"
+                                    }}
+                                >
+                                    Next question →
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => handleSubmit(false)}
+                                    disabled={submitting}
+                                    style={{
+                                        backgroundColor: "#16a34a",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        padding: "10px 22px",
+                                        fontSize: "14px",
+                                        fontWeight: "700",
+                                        cursor: submitting ? "not-allowed" : "pointer"
+                                    }}
+                                >
+                                    Submit assessment →
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Submission Confirmation Modal */}
-            {showConfirmModal && (
-                <div className="modal-backdrop-custom">
-                    <div className="modal-content-custom p-4 p-md-5">
-                        <div className="text-center mb-4">
-                            <div
-                                className="d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
-                                style={{ width: "56px", height: "56px", background: "rgba(99, 102, 241, 0.15)", color: "#818cf8" }}
-                            >
-                                <CheckCircleIcon size={32} />
-                            </div>
-                            <h3 className="fw-bold text-white mb-2">Ready to Submit?</h3>
-                            <p className="text-muted small mb-0">
-                                You have answered <strong>{answeredCount}</strong> out of <strong>{questions.length}</strong> questions.
-                                {answeredCount < questions.length && (
-                                    <span className="text-amber-400 d-block mt-2">
-                                        ⚠️ You have {questions.length - answeredCount} unanswered questions remaining.
-                                    </span>
-                                )}
-                            </p>
+                {/* Subdued Footer Note */}
+                <div style={{
+                    fontSize: "11px",
+                    color: "#94a3b8",
+                    textAlign: "center",
+                    lineHeight: "1.4"
+                }}>
+                    Proctored assessment session · Fullscreen, focus change, and clipboard activity are continuously logged to the server.
+                </div>
+            </main>
+
+            {/* Fullscreen & Integrity Security Warning Modal */}
+            {securityModal.open && (
+                <div style={{
+                    position: "fixed",
+                    inset: 0,
+                    backgroundColor: "rgba(15, 23, 42, 0.82)",
+                    backdropFilter: "blur(6px)",
+                    zIndex: 99999,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "20px"
+                }}>
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        borderRadius: "16px",
+                        maxWidth: "520px",
+                        width: "100%",
+                        padding: "32px",
+                        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.45)",
+                        border: securityModal.autoSubmitted ? "2px solid #ef4444" : "2px solid #f59e0b",
+                        textAlign: "center"
+                    }}>
+                        <div style={{
+                            width: "56px",
+                            height: "56px",
+                            borderRadius: "50%",
+                            backgroundColor: securityModal.autoSubmitted ? "#fee2e2" : "#fef3c7",
+                            color: securityModal.autoSubmitted ? "#b91c1c" : "#b45309",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "28px",
+                            margin: "0 auto 16px auto"
+                        }}>
+                            {securityModal.autoSubmitted ? "🚫" : "⚠️"}
                         </div>
 
-                        <div className="d-flex gap-3">
+                        <div style={{
+                            display: "inline-block",
+                            padding: "4px 12px",
+                            borderRadius: "9999px",
+                            backgroundColor: securityModal.autoSubmitted ? "#fee2e2" : "#fef3c7",
+                            color: securityModal.autoSubmitted ? "#991b1b" : "#92400e",
+                            fontSize: "12px",
+                            fontWeight: "700",
+                            letterSpacing: "0.04em",
+                            textTransform: "uppercase",
+                            marginBottom: "12px"
+                        }}>
+                            {securityModal.autoSubmitted
+                                ? "DISQUALIFICATION NOTICE"
+                                : `INTEGRITY WARNING: ${securityModal.violationCount} OF ${securityModal.maxAllowed}`}
+                        </div>
+
+                        <h2 style={{
+                            fontSize: "20px",
+                            fontWeight: "800",
+                            color: "#0f172a",
+                            margin: "0 0 10px 0"
+                        }}>
+                            {securityModal.title}
+                        </h2>
+
+                        <p style={{
+                            fontSize: "14px",
+                            color: "#475569",
+                            lineHeight: "1.6",
+                            margin: "0 0 24px 0"
+                        }}>
+                            {securityModal.message}
+                        </p>
+
+                        <div style={{
+                            backgroundColor: "#f8fafc",
+                            borderRadius: "8px",
+                            padding: "12px 16px",
+                            fontSize: "12.5px",
+                            color: "#64748b",
+                            textAlign: "left",
+                            marginBottom: "24px",
+                            border: "1px solid #e2e8f0"
+                        }}>
+                            <div style={{ fontWeight: "700", color: "#334155", marginBottom: "4px" }}>Proctoring Protocol:</div>
+                            <ul style={{ margin: 0, paddingLeft: "18px", lineHeight: "1.5" }}>
+                                <li>All answers and code changes are saved automatically.</li>
+                                <li>You must remain in fullscreen throughout the assessment.</li>
+                                <li>Reaching {securityModal.maxAllowed} violations terminates the examination immediately.</li>
+                            </ul>
+                        </div>
+
+                        {securityModal.autoSubmitted ? (
+                            <div style={{
+                                padding: "12px",
+                                backgroundColor: "#fef2f2",
+                                color: "#991b1b",
+                                borderRadius: "8px",
+                                fontWeight: "600",
+                                fontSize: "13px"
+                            }}>
+                                Redirecting to assessment evaluation and results...
+                            </div>
+                        ) : (
                             <button
-                                className="btn btn-secondary-dark flex-grow-1"
-                                onClick={() => setShowConfirmModal(false)}
+                                type="button"
+                                onClick={handleResumeAssessment}
+                                style={{
+                                    width: "100%",
+                                    backgroundColor: "#1e3a8a",
+                                    color: "#ffffff",
+                                    border: "none",
+                                    borderRadius: "10px",
+                                    padding: "14px 20px",
+                                    fontSize: "14px",
+                                    fontWeight: "700",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: "8px",
+                                    boxShadow: "0 4px 6px -1px rgba(30, 58, 138, 0.25)"
+                                }}
                             >
-                                Back to Review
+                                <span>⛶</span> Return to Fullscreen & Resume Assessment
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Reset Code Confirmation Modal */}
+            {resetConfirmOpen && (
+                <div style={{
+                    position: "fixed",
+                    inset: 0,
+                    backgroundColor: "rgba(15, 23, 42, 0.6)",
+                    backdropFilter: "blur(2px)",
+                    zIndex: 99998,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "20px"
+                }}>
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        borderRadius: "12px",
+                        maxWidth: "420px",
+                        width: "100%",
+                        padding: "24px",
+                        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)"
+                    }}>
+                        <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 8px 0" }}>
+                            Reset {SUPPORTED_LANGUAGES.find(l => l.id === selectedLanguage)?.label || selectedLanguage} Code?
+                        </h3>
+                        <p style={{ fontSize: "13px", color: "#64748b", lineHeight: "1.5", margin: "0 0 20px 0" }}>
+                            This will overwrite your typed code for this language with the clean starter template. Other languages and responses will not be affected.
+                        </p>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                            <button
+                                type="button"
+                                onClick={() => setResetConfirmOpen(false)}
+                                style={{
+                                    padding: "8px 14px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #cbd5e1",
+                                    backgroundColor: "#ffffff",
+                                    fontSize: "13px",
+                                    fontWeight: "600",
+                                    color: "#475569",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                Cancel
                             </button>
                             <button
-                                className="btn btn-primary-gradient flex-grow-1"
-                                onClick={handleSubmitInterview}
+                                type="button"
+                                onClick={handleResetToTemplate}
+                                style={{
+                                    padding: "8px 16px",
+                                    borderRadius: "6px",
+                                    border: "none",
+                                    backgroundColor: "#dc2626",
+                                    fontSize: "13px",
+                                    fontWeight: "700",
+                                    color: "#ffffff",
+                                    cursor: "pointer"
+                                }}
                             >
-                                Submit & Evaluate
+                                Reset Code
                             </button>
                         </div>
                     </div>
@@ -781,5 +1288,3 @@ function Interview() {
         </div>
     );
 }
-
-export default Interview;

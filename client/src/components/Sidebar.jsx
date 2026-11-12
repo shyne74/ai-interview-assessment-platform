@@ -76,6 +76,7 @@ export default function Sidebar({ isOpen, onClose }) {
     const candidateLinks = [
         { path: "/dashboard", label: "Dashboard", icon: <HomeIcon size={18} /> },
         { path: "/adaptive-exam", label: "Exam hub", icon: <ZapIcon size={18} className="text-amber-400" /> },
+        { path: "/aigenerator", label: "AI Test Prep (PDF/JD)", icon: <SparklesIcon size={18} className="text-indigo-400" /> },
         ...(activeExamPath ? [{
             path: activeExamPath,
             label: "Resume Interview",
