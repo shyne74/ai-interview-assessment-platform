@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../utils/api";
+import { getTopicByLabel, getTopicBySlug } from "../config/dsaTopics";
 
 export const DOMAIN_TOPICS_MAP = {
     "Backend Developer": [
@@ -192,26 +193,43 @@ export default function OneSkillSetup() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
 
-    const paramSkill = searchParams.get("skill") || searchParams.get("domain") || searchParams.get("role") || "";
+    const roleQuery = searchParams.get("role") || searchParams.get("domain") || "";
+    const skillQuery = searchParams.get("skill") || "";
+    const typeQuery = searchParams.get("type") || searchParams.get("format") || "";
     const requestedStep = searchParams.get("step");
 
-    // Match initial skill
+    // Redirect to DSA Topic practice if parameter matches a DSA topic
+    useEffect(() => {
+        const targetToCheck = skillQuery || roleQuery;
+        if (!targetToCheck) return;
+        const matchedDsaTopic = getTopicByLabel(targetToCheck) || getTopicBySlug(targetToCheck.toLowerCase());
+        if (matchedDsaTopic) {
+            navigate(`/practice/topics/${matchedDsaTopic.slug}`, { replace: true });
+        }
+    }, [skillQuery, roleQuery, navigate]);
+
+    // Match initial skill / role
     const initialSkill = useMemo(() => {
-        if (!paramSkill) return null;
+        const rawRole = roleQuery || (skillQuery ? "" : "");
+        if (!rawRole) return "Backend Developer";
+        const clean = rawRole.trim().toLowerCase();
+        if (clean === "coding" || clean === "coding assessment" || clean === "algorithms" || clean === "dsa") {
+            return "Software Engineer";
+        }
         const matched = SKILL_METADATA.find(
-            (s) => s.title.toLowerCase() === paramSkill.toLowerCase() ||
-                   paramSkill.toLowerCase().includes(s.title.toLowerCase())
+            (s) => s.title.toLowerCase() === clean || clean.includes(s.title.toLowerCase())
         );
-        return matched ? matched.title : paramSkill;
-    }, [paramSkill]);
+        return matched ? matched.title : "Backend Developer";
+    }, [roleQuery, skillQuery]);
 
     // View state: 'select' (skill selection screen) or 'config' (configuration screen)
     const [viewMode, setViewMode] = useState(() => {
-        if (requestedStep === "select" || !initialSkill) return "select";
-        return "config";
+        if (requestedStep === "select") return "select";
+        if (roleQuery || skillQuery) return "config";
+        return "select";
     });
 
-    const [selectedSkill, setSelectedSkill] = useState(initialSkill || "Backend Developer");
+    const [selectedSkill, setSelectedSkill] = useState(initialSkill);
 
     // Filter states for Step 2: Skill Selection
     const [selectedCategory, setSelectedCategory] = useState("All Disciplines");
@@ -219,37 +237,66 @@ export default function OneSkillSetup() {
 
     // Step 3 Configuration States
     const availableCurriculumTopics = useMemo(() => {
-        return DOMAIN_TOPICS_MAP[selectedSkill] || [
-            "Core Concepts",
-            "Architecture & Design",
-            "Performance Optimization",
-            "Best Practices",
-            "Error Handling"
-        ];
+        return DOMAIN_TOPICS_MAP[selectedSkill] || [];
     }, [selectedSkill]);
 
     const [selectedPredefinedTopics, setSelectedPredefinedTopics] = useState(() => {
         const defaultList = DOMAIN_TOPICS_MAP[selectedSkill] || [];
+        if (skillQuery) {
+            const matchedPredefined = defaultList.find(
+                t => t.toLowerCase() === skillQuery.toLowerCase()
+            );
+            return matchedPredefined ? [matchedPredefined] : [];
+        }
         return defaultList.slice(0, 3);
     });
 
     const [dropdownSelectedTopic, setDropdownSelectedTopic] = useState("");
 
-    // Sync topics when selectedSkill changes
+    // Custom Topics
+    const [customTopics, setCustomTopics] = useState(() => {
+        if (skillQuery) {
+            const defaultList = DOMAIN_TOPICS_MAP[selectedSkill] || [];
+            const matchedPredefined = defaultList.find(
+                t => t.toLowerCase() === skillQuery.toLowerCase()
+            );
+            if (!matchedPredefined) return [skillQuery];
+        }
+        return [];
+    });
+
+    const [customInput, setCustomInput] = useState("");
+
+    // Sync topics when selectedSkill changes (if user switches discipline in config mode)
     useEffect(() => {
         const list = DOMAIN_TOPICS_MAP[selectedSkill] || [];
-        setSelectedPredefinedTopics(list.slice(0, 3));
+        if (skillQuery) {
+            const matchedPredefined = list.find(
+                t => t.toLowerCase() === skillQuery.toLowerCase()
+            );
+            if (matchedPredefined) {
+                setSelectedPredefinedTopics([matchedPredefined]);
+                setCustomTopics([]);
+            } else {
+                setSelectedPredefinedTopics([]);
+                setCustomTopics([skillQuery]);
+            }
+        } else {
+            setSelectedPredefinedTopics(list.slice(0, 3));
+            setCustomTopics([]);
+        }
         setDropdownSelectedTopic("");
-    }, [selectedSkill]);
-
-    // Custom Topics
-    const [customTopics, setCustomTopics] = useState([]);
-    const [customInput, setCustomInput] = useState("");
+    }, [selectedSkill, skillQuery]);
 
     // Assessment Parameters
     const [questionCount, setQuestionCount] = useState(5);
     const [difficulty, setDifficulty] = useState("Medium");
-    const [focusFormat, setFocusFormat] = useState("theory");
+    const [focusFormat, setFocusFormat] = useState(() => {
+        const t = (typeQuery || "").toLowerCase();
+        if (t === "coding" || t.includes("coding")) return "coding";
+        if (t === "mixed" || t.includes("mixed")) return "mixed";
+        return "theory";
+    });
 
     // Submission states
     const [starting, setStarting] = useState(false);
@@ -327,8 +374,9 @@ export default function OneSkillSetup() {
             ])).filter(Boolean);
 
             const payload = {
+                interviewType: "one-skill",
                 roleTitle: selectedSkill,
-                domain: selectedSkill,
+                domain: allSelectedTopics.length > 0 ? allSelectedTopics.join(", ") : selectedSkill,
                 selectedTopics: allSelectedTopics,
                 customTopics: customTopics,
                 assessmentType: focusFormat,
@@ -351,11 +399,49 @@ export default function OneSkillSetup() {
     };
 
     // ==============================================================
-    // STEP 2: SKILL SELECTION SCREEN
+    // STEP 1: ROLE SELECTION SCREEN (SIMPLIFIED & MINIMAL)
     // ==============================================================
     if (viewMode === "select") {
         return (
-            <div style={{ maxWidth: "1200px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "24px" }}>
+            <div style={{ maxWidth: "1120px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "24px" }}>
+                <style>{`
+                    .role-card {
+                        background-color: #ffffff;
+                        border: 1.5px solid #e2e8f0;
+                        border-radius: 12px;
+                        padding: 18px 20px;
+                        cursor: pointer;
+                        display: flex;
+                        flex-direction: column;
+                        justifyContent: space-between;
+                        gap: 16px;
+                        transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+                        outline: none;
+                        box-sizing: border-box;
+                    }
+                    .role-card:hover {
+                        border-color: #3b82f6 !important;
+                        background-color: #f0f7ff !important;
+                        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.08);
+                        transform: translateY(-1px);
+                    }
+                    .role-card:hover .role-cfg-btn {
+                        background-color: #1e3a8a !important;
+                        color: #ffffff !important;
+                        border-color: #1e3a8a !important;
+                    }
+                    .role-card:focus-visible {
+                        border-color: #3b82f6 !important;
+                        background-color: #f0f7ff !important;
+                        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+                    }
+                    .role-card:focus-visible .role-cfg-btn {
+                        background-color: #1e3a8a !important;
+                        color: #ffffff !important;
+                        border-color: #1e3a8a !important;
+                    }
+                `}</style>
+
                 {/* Header */}
                 <div>
                     <div style={{
@@ -366,19 +452,19 @@ export default function OneSkillSetup() {
                         color: "#2563eb",
                         marginBottom: "6px"
                     }}>
-                        STEP 2 · CHOOSE A TECHNICAL SKILL
+                        STEP 1 · CHOOSE A DOMAIN & ROLE
                     </div>
                     <h1 style={{
-                        fontSize: "28px",
+                        fontSize: "26px",
                         fontWeight: "800",
                         color: "#0f172a",
                         letterSpacing: "-0.03em",
                         margin: "0 0 6px 0"
                     }}>
-                        Select Your Target Skill
+                        Select Your Target Role
                     </h1>
-                    <p style={{ fontSize: "15px", color: "#475569", margin: 0 }}>
-                        Pick the primary technical discipline you want to master. On the next step, you will choose specific curriculum topics and practice parameters.
+                    <p style={{ fontSize: "14px", color: "#475569", margin: 0 }}>
+                        Pick a role to practice. On the next step, you'll configure specific topics and assessment parameters.
                     </p>
                 </div>
 
@@ -388,14 +474,14 @@ export default function OneSkillSetup() {
                     justifyContent: "space-between",
                     alignItems: "center",
                     flexWrap: "wrap",
-                    gap: "16px",
+                    gap: "12px",
                     backgroundColor: "#ffffff",
                     border: "1px solid #e2e8f0",
                     borderRadius: "12px",
-                    padding: "16px 20px"
+                    padding: "12px 16px"
                 }}>
                     {/* Category Filter Pills */}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                         {CATEGORIES.map((cat) => {
                             const isSelected = selectedCategory === cat;
                             return (
@@ -404,12 +490,12 @@ export default function OneSkillSetup() {
                                     type="button"
                                     onClick={() => setSelectedCategory(cat)}
                                     style={{
-                                        padding: "6px 14px",
+                                        padding: "6px 13px",
                                         borderRadius: "20px",
                                         border: isSelected ? "1.5px solid #2563eb" : "1px solid #cbd5e1",
                                         backgroundColor: isSelected ? "#eff6ff" : "#f8fafc",
                                         color: isSelected ? "#1d4ed8" : "#475569",
-                                        fontSize: "12.5px",
+                                        fontSize: "12px",
                                         fontWeight: isSelected ? "700" : "500",
                                         cursor: "pointer",
                                         transition: "all 0.15s ease"
@@ -422,10 +508,10 @@ export default function OneSkillSetup() {
                     </div>
 
                     {/* Search Input */}
-                    <div style={{ position: "relative", minWidth: "240px" }}>
+                    <div style={{ position: "relative", minWidth: "220px", flex: "0 1 260px" }}>
                         <input
                             type="text"
-                            placeholder="Filter skills or topics..."
+                            placeholder="Search roles or skills..."
                             value={searchFilter}
                             onChange={(e) => setSearchFilter(e.target.value)}
                             style={{
@@ -434,125 +520,149 @@ export default function OneSkillSetup() {
                                 borderRadius: "8px",
                                 border: "1px solid #cbd5e1",
                                 fontSize: "13px",
-                                backgroundColor: "#ffffff"
+                                backgroundColor: "#ffffff",
+                                boxSizing: "border-box"
                             }}
                         />
                         <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "12px", color: "#94a3b8" }}>
                             🔍
                         </span>
+                        {searchFilter && (
+                            <button
+                                type="button"
+                                onClick={() => setSearchFilter("")}
+                                style={{
+                                    position: "absolute",
+                                    right: "10px",
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    background: "none",
+                                    border: "none",
+                                    color: "#94a3b8",
+                                    cursor: "pointer",
+                                    fontSize: "12px",
+                                    padding: 0
+                                }}
+                            >
+                                ✕
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                {/* Skill Cards Grid */}
-                <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))",
-                    gap: "16px"
-                }}>
-                    {filteredSkills.map((item) => (
-                        <div
-                            key={item.title}
-                            onClick={() => handleSelectSkillCard(item.title)}
+                {/* Compact Minimal Role Cards Grid */}
+                {filteredSkills.length === 0 ? (
+                    <div style={{
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "12px",
+                        padding: "36px 20px",
+                        textAlign: "center"
+                    }}>
+                        <div style={{ fontSize: "24px", marginBottom: "8px" }}>🔍</div>
+                        <div style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a", marginBottom: "4px" }}>
+                            No roles found
+                        </div>
+                        <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "14px" }}>
+                            No roles matched "{searchFilter}".
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => { setSearchFilter(""); setSelectedCategory("All Disciplines"); }}
                             style={{
-                                backgroundColor: "#ffffff",
-                                border: "1px solid #e2e8f0",
-                                borderRadius: "14px",
-                                padding: "22px",
-                                cursor: "pointer",
-                                display: "flex",
-                                flexDirection: "column",
-                                justifyContent: "space-between",
-                                transition: "all 0.18s ease",
-                                boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = "#2563eb";
-                                e.currentTarget.style.transform = "translateY(-2px)";
-                                e.currentTarget.style.boxShadow = "0 6px 16px rgba(37,99,235,0.08)";
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = "#e2e8f0";
-                                e.currentTarget.style.transform = "none";
-                                e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.04)";
+                                padding: "7px 16px",
+                                borderRadius: "8px",
+                                backgroundColor: "#1e3a8a",
+                                color: "#ffffff",
+                                border: "none",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                cursor: "pointer"
                             }}
                         >
-                            <div>
-                                <div style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    marginBottom: "10px"
-                                }}>
+                            Reset Filters
+                        </button>
+                    </div>
+                ) : (
+                    <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                        gap: "14px"
+                    }}>
+                        {filteredSkills.map((item) => (
+                            <div
+                                key={item.title}
+                                tabIndex={0}
+                                onClick={() => handleSelectSkillCard(item.title)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        handleSelectSkillCard(item.title);
+                                    }
+                                }}
+                                className="role-card"
+                            >
+                                <div>
+                                    {/* Domain / Category Label */}
                                     <span style={{
+                                        display: "block",
                                         fontSize: "11px",
                                         fontWeight: "700",
                                         letterSpacing: "0.06em",
                                         textTransform: "uppercase",
                                         color: "#64748b",
-                                        backgroundColor: "#f1f5f9",
-                                        padding: "3px 8px",
-                                        borderRadius: "6px"
+                                        marginBottom: "8px"
                                     }}>
                                         {item.category}
                                     </span>
-                                    <span style={{ fontSize: "13px", color: "#2563eb", fontWeight: "600" }}>
+
+                                    {/* Role / Skill Name */}
+                                    <h3 style={{
+                                        fontSize: "17px",
+                                        fontWeight: "700",
+                                        color: "#0f172a",
+                                        margin: 0,
+                                        lineHeight: "1.3"
+                                    }}>
+                                        {item.title}
+                                    </h3>
+                                </div>
+
+                                {/* Configure Button */}
+                                <div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSelectSkillCard(item.title);
+                                        }}
+                                        className="role-cfg-btn"
+                                        style={{
+                                            width: "100%",
+                                            backgroundColor: "#f8fafc",
+                                            color: "#1e3a8a",
+                                            border: "1px solid #cbd5e1",
+                                            borderRadius: "8px",
+                                            padding: "8px 14px",
+                                            fontSize: "13px",
+                                            fontWeight: "600",
+                                            cursor: "pointer",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "4px",
+                                            transition: "all 0.15s ease"
+                                        }}
+                                    >
                                         Configure →
-                                    </span>
-                                </div>
-
-                                <h3 style={{
-                                    fontSize: "18px",
-                                    fontWeight: "800",
-                                    color: "#0f172a",
-                                    margin: "0 0 8px 0"
-                                }}>
-                                    {item.title}
-                                </h3>
-
-                                <p style={{
-                                    fontSize: "13px",
-                                    color: "#475569",
-                                    lineHeight: "1.45",
-                                    margin: "0 0 16px 0"
-                                }}>
-                                    {item.description}
-                                </p>
-                            </div>
-
-                            {/* Tags Preview */}
-                            <div>
-                                <div style={{
-                                    fontSize: "11px",
-                                    fontWeight: "600",
-                                    color: "#64748b",
-                                    marginBottom: "6px"
-                                }}>
-                                    Curriculum Preview:
-                                </div>
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                                    {item.tags.map((t) => (
-                                        <span
-                                            key={t}
-                                            style={{
-                                                fontSize: "11.5px",
-                                                fontWeight: "600",
-                                                color: "#334155",
-                                                backgroundColor: "#f8fafc",
-                                                border: "1px solid #e2e8f0",
-                                                padding: "2px 8px",
-                                                borderRadius: "6px"
-                                            }}
-                                        >
-                                            {t}
-                                        </span>
-                                    ))}
+                                    </button>
                                 </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                )}
 
-                <div style={{ textAlign: "center", marginTop: "12px" }}>
+                <div style={{ textAlign: "center", marginTop: "8px" }}>
                     <button
                         type="button"
                         onClick={() => navigate("/practice")}
@@ -589,7 +699,7 @@ export default function OneSkillSetup() {
                     color: "#2563eb",
                     marginBottom: "6px"
                 }}>
-                    03 / ONE SKILL AT A TIME
+                    STEP 2 · CONFIGURE TOPICS & PARAMETERS
                 </div>
                 <h1 style={{
                     fontSize: "28px",
@@ -709,35 +819,41 @@ export default function OneSkillSetup() {
 
                         {/* Interactive Clickable Topic Chips Grid */}
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                            {availableCurriculumTopics.map((topic) => {
-                                const isSelected = selectedPredefinedTopics.includes(topic);
-                                return (
-                                    <button
-                                        key={topic}
-                                        type="button"
-                                        onClick={() => togglePredefinedTopic(topic)}
-                                        style={{
-                                            padding: "8px 14px",
-                                            borderRadius: "20px",
-                                            border: isSelected ? "1.5px solid #2563eb" : "1px solid #cbd5e1",
-                                            backgroundColor: isSelected ? "#eff6ff" : "#ffffff",
-                                            color: isSelected ? "#1d4ed8" : "#334155",
-                                            fontSize: "13px",
-                                            fontWeight: isSelected ? "700" : "500",
-                                            cursor: "pointer",
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: "6px",
-                                            transition: "all 0.15s ease"
-                                        }}
-                                    >
-                                        <span>{topic}</span>
-                                        {isSelected && (
-                                            <span style={{ fontSize: "12px", color: "#2563eb", fontWeight: "800" }}>✓</span>
-                                        )}
-                                    </button>
-                                );
-                            })}
+                            {availableCurriculumTopics.length === 0 ? (
+                                <div style={{ fontSize: "13px", color: "#64748b", fontStyle: "italic", padding: "8px 0" }}>
+                                    No predefined curriculum topics available for this role. You can add custom topics below.
+                                </div>
+                            ) : (
+                                availableCurriculumTopics.map((topic) => {
+                                    const isSelected = selectedPredefinedTopics.includes(topic);
+                                    return (
+                                        <button
+                                            key={topic}
+                                            type="button"
+                                            onClick={() => togglePredefinedTopic(topic)}
+                                            style={{
+                                                padding: "8px 14px",
+                                                borderRadius: "20px",
+                                                border: isSelected ? "1.5px solid #2563eb" : "1px solid #cbd5e1",
+                                                backgroundColor: isSelected ? "#eff6ff" : "#ffffff",
+                                                color: isSelected ? "#1d4ed8" : "#334155",
+                                                fontSize: "13px",
+                                                fontWeight: isSelected ? "700" : "500",
+                                                cursor: "pointer",
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "6px",
+                                                transition: "all 0.15s ease"
+                                            }}
+                                        >
+                                            <span>{topic}</span>
+                                            {isSelected && (
+                                                <span style={{ fontSize: "12px", color: "#2563eb", fontWeight: "800" }}>✓</span>
+                                            )}
+                                        </button>
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
 

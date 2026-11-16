@@ -5,6 +5,8 @@ import api from "../services/api";
 export default function Result() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const userRole = localStorage.getItem("role") || "user";
+    const isAdmin = userRole === "admin";
 
     const [loading, setLoading] = useState(true);
     const [resultData, setResultData] = useState(null);
@@ -90,10 +92,16 @@ export default function Result() {
     }
 
     // Determine values from real backend result or sample fallbacks
-    const overallScoreRaw = resultData?.overallScore ?? interviewData?.overallScore ?? 7.8;
+    const overallScoreRaw = resultData?.overallScore !== undefined
+        ? Number(resultData.overallScore)
+        : (interviewData?.overallScore !== undefined ? Number(interviewData.overallScore) : 0.0);
     const overallScorePercent = overallScoreRaw > 10 ? Math.round(overallScoreRaw) : Math.round(overallScoreRaw * 10);
 
     const roleTitle = resultData?.roleTitle || interviewData?.roleTitle || "Frontend developer";
+    const assessmentType = interviewData?.assessmentType || resultData?.assessmentType || (resultData?.domain === "Coding" || interviewData?.domain === "Coding" ? "coding" : "mixed");
+    const effectiveRole = (roleTitle.toLowerCase() === "coding" || roleTitle.toLowerCase() === "coding assessment")
+        ? "Software Engineer"
+        : roleTitle;
     const completedDate = resultData?.createdAt ? new Date(resultData.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "26 October 2026";
 
     // Skill breakdown map
@@ -127,15 +135,41 @@ export default function Result() {
 
     // Responses list for detailed review table
     const responsesList = interviewData?.responses?.length
-        ? interviewData.responses.map((r, idx) => ({
-            num: String(idx + 1).padStart(2, "0"),
-            title: r.questionText || `Question ${idx + 1}`,
-            skill: r.questionType === "coding" ? "Coding" : "Technical",
-            evaluation: (r.score?.overallScore >= 8 || r.score >= 8) ? "Strong" : (r.score?.overallScore >= 6 || r.score >= 6) ? "Good" : "Needs detail",
-            evalColor: (r.score?.overallScore >= 8 || r.score >= 8) ? "#10b981" : (r.score?.overallScore >= 6 || r.score >= 6) ? "#3b82f6" : "#f59e0b",
-            answer: r.userAnswer || r.code || "No response submitted.",
-            feedback: r.aiFeedback || "Evaluated by AI based on relevance, completeness, and clarity."
-        }))
+        ? interviewData.responses.map((r, idx) => {
+            const rawScore = typeof r.score === "object" ? Number(r.score?.overallScore ?? 0) : Number(r.score ?? 0);
+            let evaluation = "Not attempted";
+            let evalColor = "#94a3b8";
+
+            if (rawScore >= 8.5) {
+                evaluation = "Strong";
+                evalColor = "#16a34a";
+            } else if (rawScore >= 7.0) {
+                evaluation = "Good";
+                evalColor = "#2563eb";
+            } else if (rawScore >= 4.0) {
+                evaluation = "Needs detail";
+                evalColor = "#d97706";
+            } else if (rawScore > 0) {
+                evaluation = "Weak";
+                evalColor = "#dc2626";
+            }
+
+            const isCodingQ = r.questionType === "coding" || Boolean(r.code);
+            const isUntouched = rawScore === 0 && (!r.userAnswer?.trim() && (!r.code?.trim() || r.unchanged));
+            const answerDisplay = isUntouched
+                ? (isCodingQ ? "No code submitted." : "No answer submitted.")
+                : (r.userAnswer || r.code || (isCodingQ ? "No code submitted." : "No answer submitted."));
+
+            return {
+                num: String(idx + 1).padStart(2, "0"),
+                title: r.questionText || `Question ${idx + 1}`,
+                skill: isCodingQ ? "Coding" : "Technical",
+                evaluation,
+                evalColor,
+                answer: answerDisplay,
+                feedback: r.aiFeedback || "Evaluated by AI engine based on technical relevance, correctness, and completeness."
+            };
+        })
         : [
             {
                 num: "01",
@@ -168,6 +202,29 @@ export default function Result() {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: "28px", maxWidth: "1216px", margin: "0 auto" }}>
+            {/* Breadcrumb for Admin */}
+            {isAdmin && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#64748b", marginBottom: "-12px" }}>
+                    <button
+                        type="button"
+                        onClick={() => navigate(-1)}
+                        style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: "12px", padding: 0, fontWeight: "600" }}
+                    >
+                        ← Back
+                    </button>
+                    <span>/</span>
+                    <button
+                        type="button"
+                        onClick={() => navigate("/admin-dashboard")}
+                        style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: "12px", padding: 0 }}
+                    >
+                        Admin Overview
+                    </button>
+                    <span>/</span>
+                    <span style={{ color: "#0f172a", fontWeight: "600" }}>Assessment Audit</span>
+                </div>
+            )}
+
             {/* Header */}
             <div style={{
                 display: "flex",
@@ -183,7 +240,7 @@ export default function Result() {
                         color: "#64748b",
                         marginBottom: "6px"
                     }}>
-                        08 / YOUR RESULTS
+                        {isAdmin ? "ADMIN AUDIT / ASSESSMENT RECORD" : "08 / YOUR RESULTS"}
                     </div>
                     <h1 style={{
                         fontSize: "28px",
@@ -192,7 +249,7 @@ export default function Result() {
                         letterSpacing: "-0.03em",
                         margin: "0 0 6px 0"
                     }}>
-                        A clear baseline. A useful next step.
+                        {isAdmin ? "Candidate Assessment Audit" : "A clear baseline. A useful next step."}
                     </h1>
                     <p style={{
                         fontSize: "14px",
@@ -203,56 +260,93 @@ export default function Result() {
                     </p>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                    <button
-                        type="button"
-                        onClick={() => navigate("/dashboard", { replace: true })}
-                        style={{
-                            backgroundColor: "#1e3a8a",
-                            color: "#ffffff",
-                            border: "none",
-                            borderRadius: "8px",
-                            padding: "8px 16px",
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            cursor: "pointer"
-                        }}
-                    >
-                        Return to Dashboard
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => navigate("/practice")}
-                        style={{
-                            backgroundColor: "#ffffff",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: "8px",
-                            padding: "8px 14px",
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            color: "#334155",
-                            cursor: "pointer"
-                        }}
-                    >
-                        Practice Hub
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => navigate("/history")}
-                        style={{
-                            backgroundColor: "#ffffff",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: "8px",
-                            padding: "8px 14px",
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            color: "#334155",
-                            cursor: "pointer"
-                        }}
-                    >
-                        My Progress
-                    </button>
-                </div>
+                {isAdmin ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                        <button
+                            type="button"
+                            onClick={() => navigate("/admin-dashboard")}
+                            style={{
+                                backgroundColor: "#1e3a8a",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                cursor: "pointer"
+                            }}
+                        >
+                            ← Back to Admin Dashboard
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => navigate("/candidate-data")}
+                            style={{
+                                backgroundColor: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                padding: "8px 14px",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                color: "#334155",
+                                cursor: "pointer"
+                            }}
+                        >
+                            Candidates Roster
+                        </button>
+                    </div>
+                ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                        <button
+                            type="button"
+                            onClick={() => navigate("/dashboard", { replace: true })}
+                            style={{
+                                backgroundColor: "#1e3a8a",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                cursor: "pointer"
+                            }}
+                        >
+                            Return to Dashboard
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => navigate("/practice")}
+                            style={{
+                                backgroundColor: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                padding: "8px 14px",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                color: "#334155",
+                                cursor: "pointer"
+                            }}
+                        >
+                            Practice Hub
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => navigate("/history")}
+                            style={{
+                                backgroundColor: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                padding: "8px 14px",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                color: "#334155",
+                                cursor: "pointer"
+                            }}
+                        >
+                            My Progress
+                        </button>
+                    </div>
+                )}
             </div>
 
             {error && (
@@ -468,7 +562,10 @@ export default function Result() {
 
                 <button
                     type="button"
-                    onClick={() => navigate(`/practice/mock-setup?role=${encodeURIComponent(roleTitle)}&skill=${encodeURIComponent(skillBreakdown[skillBreakdown.length - 1]?.skill || "System Design")}`)}
+                    onClick={() => {
+                        const weakSkill = skillBreakdown[skillBreakdown.length - 1]?.skill || "System Design";
+                        navigate(`/practice/mock-setup?role=${encodeURIComponent(effectiveRole)}&skill=${encodeURIComponent(weakSkill)}&type=${encodeURIComponent(assessmentType)}`);
+                    }}
                     style={{
                         backgroundColor: "#1e3a8a",
                         color: "#ffffff",
@@ -609,33 +706,67 @@ export default function Result() {
                 flexWrap: "wrap",
                 gap: "12px"
             }}>
-                <div>
-                    <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>
-                        Done reviewing your assessment?
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#64748b" }}>
-                        All scores and AI feedback are securely saved to your progress profile.
-                    </div>
-                </div>
+                {isAdmin ? (
+                    <>
+                        <div>
+                            <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>
+                                Done auditing this candidate assessment?
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#64748b" }}>
+                                All scores, responses, and evaluation telemetry remain securely archived in the administrative records.
+                            </div>
+                        </div>
 
-                <div style={{ display: "flex", gap: "10px" }}>
-                    <button
-                        type="button"
-                        onClick={() => navigate("/dashboard", { replace: true })}
-                        className="wf-btn-primary"
-                        style={{ padding: "9px 20px" }}
-                    >
-                        Back to Dashboard →
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => navigate("/practice")}
-                        className="wf-btn-outline"
-                        style={{ padding: "9px 16px" }}
-                    >
-                        Practice Hub
-                    </button>
-                </div>
+                        <div style={{ display: "flex", gap: "10px" }}>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/admin-dashboard")}
+                                className="wf-btn-primary"
+                                style={{ padding: "9px 20px" }}
+                            >
+                                ← Back to Admin Dashboard
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/candidate-data")}
+                                className="wf-btn-outline"
+                                style={{ padding: "9px 16px" }}
+                            >
+                                View All Candidates
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div>
+                            <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>
+                                Done reviewing your assessment?
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#64748b" }}>
+                                All scores and AI feedback are securely saved to your progress profile.
+                            </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: "10px" }}>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/dashboard", { replace: true })}
+                                className="wf-btn-primary"
+                                style={{ padding: "9px 20px" }}
+                            >
+                                Back to Dashboard →
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/practice")}
+                                className="wf-btn-outline"
+                                style={{ padding: "9px 16px" }}
+                            >
+                                Practice Hub
+                            </button>
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     );

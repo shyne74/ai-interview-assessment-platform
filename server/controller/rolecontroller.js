@@ -28,23 +28,48 @@ exports.createRole = async function(req, res) {
     }
 };
 
+function escapeRegex(text) {
+    return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+}
+
 exports.getroles = async function(req, res) {
     try {
         const roles = await Role.find().sort({ createdAt: -1 });
 
-        // Augment each role with actual question count from MongoDB
+        // Collect all taxonomy titles and aliases
+        const allTaxonomyTerms = [];
+        roles.forEach(r => {
+            if (r.title && r.title.trim()) allTaxonomyTerms.push(r.title.trim());
+            if (Array.isArray(r.aliases)) {
+                r.aliases.forEach(a => {
+                    if (a && typeof a === "string" && a.trim()) allTaxonomyTerms.push(a.trim());
+                });
+            }
+        });
+
+        // Augment each role with actual question count from MongoDB matching title & aliases
         const enrichedRoles = await Promise.all(roles.map(async (r) => {
             const roleObj = r.toObject();
+            const searchTerms = [r.title, ...(r.aliases || [])].filter(Boolean);
+            const regexes = searchTerms.map(t => new RegExp(`^${escapeRegex(t.trim())}$`, "i"));
             const qCount = await Question.countDocuments({
-                role: { $regex: new RegExp(`^${r.title}$`, "i") }
+                $or: regexes.map(reg => ({ role: { $regex: reg } }))
             });
             roleObj.questions = qCount;
             roleObj.questionCount = qCount;
             return roleObj;
         }));
 
+        const totalQuestions = await Question.countDocuments({});
+        const taxonomyRegexes = allTaxonomyTerms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
+        const otherCount = await Question.countDocuments({
+            role: { $nin: taxonomyRegexes }
+        });
+
         return res.status(200).json({
-            roles: enrichedRoles
+            roles: enrichedRoles,
+            totalQuestions,
+            otherCount
         });
     } catch (err) {
         return res.status(500).json({

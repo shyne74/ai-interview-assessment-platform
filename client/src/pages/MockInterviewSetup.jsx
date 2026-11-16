@@ -15,30 +15,44 @@ export default function MockInterviewSetup() {
     const paramFocus = searchParams.get("focus") || searchParams.get("domain") || "";
     const initialTargetTopic = paramSkill || paramFocus;
 
-    // Normalize canonical role title matching
-    const matchedRole = ROLES.find(
-        (r) => r.toLowerCase() === paramRole.toLowerCase() || paramRole.toLowerCase().includes(r.toLowerCase())
-    ) || "Frontend Developer";
+    // Normalize canonical role title matching (avoid defaulting to Frontend Developer for coding/algorithms)
+    const matchedRole = useMemo(() => {
+        if (!paramRole) return "Software Engineer";
+        const clean = paramRole.trim().toLowerCase();
+        if (clean === "coding" || clean === "coding assessment" || clean === "algorithms" || clean === "algorithm" || clean === "dsa") {
+            return "Software Engineer";
+        }
+        const found = ROLES.find(
+            (r) => r.toLowerCase() === clean || clean.includes(r.toLowerCase()) || r.toLowerCase().includes(clean)
+        );
+        return found || "Software Engineer";
+    }, [paramRole]);
 
     const [role, setRole] = useState(matchedRole);
     const [testType, setTestType] = useState(paramType);
     const [questionCount, setQuestionCount] = useState("5 questions");
     const [difficulty, setDifficulty] = useState(paramDifficulty);
-    const [assessmentType, setAssessmentType] = useState(
-        paramType.toLowerCase().includes("coding") ? "coding" : "theory"
-    );
+
+    // Resolve assessment type from ?type= (coding, mixed, theory)
+    const initialAssessmentType = useMemo(() => {
+        const t = (paramType || "").toLowerCase();
+        if (t === "coding" || t.includes("coding")) return "coding";
+        if (t === "mixed" || t.includes("mixed")) return "mixed";
+        return "theory";
+    }, [paramType]);
+
+    const [assessmentType, setAssessmentType] = useState(initialAssessmentType);
 
     // Topics under selected role
     const defaultTopics = ROLE_DOMAINS[matchedRole] || ["General"];
 
-    // Predefined topics selected
+    // Predefined topics selected - if specific targeted skill is provided, don't auto-select unrelated predefined topics!
     const [selectedTopics, setSelectedTopics] = useState(() => {
         if (initialTargetTopic) {
             const matchedPredefined = defaultTopics.find(
-                t => t.toLowerCase() === initialTargetTopic.toLowerCase() ||
-                     initialTargetTopic.toLowerCase().includes(t.toLowerCase())
+                t => t.toLowerCase() === initialTargetTopic.toLowerCase()
             );
-            if (matchedPredefined) return [matchedPredefined];
+            return matchedPredefined ? [matchedPredefined] : [];
         }
         return defaultTopics.slice(0, 3);
     });
@@ -47,8 +61,7 @@ export default function MockInterviewSetup() {
     const [customTopics, setCustomTopics] = useState(() => {
         if (initialTargetTopic) {
             const matchedPredefined = defaultTopics.find(
-                t => t.toLowerCase() === initialTargetTopic.toLowerCase() ||
-                     initialTargetTopic.toLowerCase().includes(t.toLowerCase())
+                t => t.toLowerCase() === initialTargetTopic.toLowerCase()
             );
             if (!matchedPredefined) return [initialTargetTopic];
         }
@@ -62,7 +75,7 @@ export default function MockInterviewSetup() {
         return [...selectedTopics, ...customTopics];
     }, [selectedTopics, customTopics]);
 
-    // AI Generation controls
+    // AI Generation controls - enable AI generation by default when practicing targeted skill
     const [generateWithAI, setGenerateWithAI] = useState(true);
     const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -73,13 +86,29 @@ export default function MockInterviewSetup() {
             return;
         }
         const available = ROLE_DOMAINS[role] || ["General"];
-        setSelectedTopics(available.slice(0, 3));
-        setCustomTopics([]);
-    }, [role]);
+        if (initialTargetTopic) {
+            const matchedPredefined = available.find(
+                t => t.toLowerCase() === initialTargetTopic.toLowerCase()
+            );
+            if (matchedPredefined) {
+                setSelectedTopics([matchedPredefined]);
+                setCustomTopics([]);
+            } else {
+                setSelectedTopics([]);
+                setCustomTopics([initialTargetTopic]);
+            }
+        } else {
+            setSelectedTopics(available.slice(0, 3));
+            setCustomTopics([]);
+        }
+    }, [role, initialTargetTopic]);
 
     useEffect(() => {
-        if (paramType.toLowerCase().includes("coding")) {
+        const t = (paramType || "").toLowerCase();
+        if (t === "coding" || t.includes("coding")) {
             setAssessmentType("coding");
+        } else if (t === "mixed" || t.includes("mixed")) {
+            setAssessmentType("mixed");
         }
     }, [paramType]);
 

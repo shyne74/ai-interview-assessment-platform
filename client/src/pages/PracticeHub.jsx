@@ -1,16 +1,34 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function PracticeHub() {
     const navigate = useNavigate();
-    const [selectedSkill, setSelectedSkill] = useState("System design");
-
-    const handleQuickSkillPractice = () => {
-        navigate(`/practice/one-skill?step=config&skill=${encodeURIComponent(selectedSkill)}`);
-    };
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: "32px", maxWidth: "1120px", margin: "0 auto" }}>
+            <style>{`
+                .practice-hub-card {
+                    background-color: #ffffff;
+                    border: 1.5px solid #e2e8f0;
+                    border-radius: 14px;
+                    transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+                    outline: none;
+                }
+                .practice-hub-card:hover {
+                    border-color: #3b82f6 !important;
+                    background-color: #f0f7ff !important;
+                    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
+                }
+                .practice-hub-card:focus-visible {
+                    border-color: #3b82f6 !important;
+                    background-color: #f0f7ff !important;
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+                }
+                .practice-hub-card:focus-within {
+                    border-color: #3b82f6;
+                    background-color: #f0f7ff;
+                }
+            `}</style>
+
             {/* Header */}
             <div>
                 <div style={{
@@ -48,15 +66,16 @@ export default function PracticeHub() {
                 gap: "20px"
             }}>
                 {/* Mock Interview */}
-                <div style={{
-                    backgroundColor: "#f0f7ff",
-                    border: "1.5px solid #3b82f6",
-                    borderRadius: "14px",
-                    padding: "32px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between"
-                }}>
+                <div
+                    className="practice-hub-card"
+                    tabIndex={0}
+                    style={{
+                        padding: "32px",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between"
+                    }}
+                >
                     <div>
                         <div style={{ fontSize: "24px", marginBottom: "16px" }}>💬</div>
                         <h2 style={{
@@ -92,8 +111,11 @@ export default function PracticeHub() {
                                 cursor: "pointer",
                                 display: "inline-flex",
                                 alignItems: "center",
-                                gap: "6px"
+                                gap: "6px",
+                                transition: "background-color 0.15s ease"
                             }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#1d4ed8"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#1e3a8a"; }}
                         >
                             Set up interview →
                         </button>
@@ -101,15 +123,16 @@ export default function PracticeHub() {
                 </div>
 
                 {/* Adaptive Assessment */}
-                <div style={{
-                    backgroundColor: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "14px",
-                    padding: "32px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between"
-                }}>
+                <div
+                    className="practice-hub-card"
+                    tabIndex={0}
+                    style={{
+                        padding: "32px",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between"
+                    }}
+                >
                     <div>
                         <div style={{ fontSize: "24px", marginBottom: "16px" }}>〰️</div>
                         <h2 style={{
@@ -145,8 +168,11 @@ export default function PracticeHub() {
                                 cursor: "pointer",
                                 display: "inline-flex",
                                 alignItems: "center",
-                                gap: "6px"
+                                gap: "6px",
+                                transition: "all 0.15s ease"
                             }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#94a3b8"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#cbd5e1"; }}
                         >
                             Explore adaptive →
                         </button>
@@ -181,15 +207,16 @@ export default function PracticeHub() {
                     gap: "20px"
                 }}>
                     {/* PDF Preparation */}
-                    <div style={{
-                        backgroundColor: "#ffffff",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "14px",
-                        padding: "28px",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between"
-                    }}>
+                    <div
+                        className="practice-hub-card"
+                        tabIndex={0}
+                        style={{
+                            padding: "28px",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "space-between"
+                        }}
+                    >
                         <div>
                             <div style={{
                                 width: "36px",
@@ -245,15 +272,16 @@ export default function PracticeHub() {
                     </div>
 
                     {/* Job Description Practice */}
-                    <div style={{
-                        backgroundColor: "#ffffff",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "14px",
-                        padding: "28px",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between"
-                    }}>
+                    <div
+                        className="practice-hub-card"
+                        tabIndex={0}
+                        style={{
+                            padding: "28px",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "space-between"
+                        }}
+                    >
                         <div>
                             <div style={{
                                 width: "36px",
@@ -310,87 +338,60 @@ export default function PracticeHub() {
                 </div>
             </div>
 
-            {/* Bottom Section: Just want to work on one skill? */}
-            <div style={{
-                backgroundColor: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "14px",
-                padding: "28px"
-            }}>
-                <h3 style={{
-                    fontSize: "16px",
-                    fontWeight: "700",
-                    color: "#0f172a",
-                    margin: "0 0 6px 0"
-                }}>
-                    Just want to work on one skill?
-                </h3>
-                <p style={{
-                    fontSize: "13px",
-                    color: "#64748b",
-                    margin: "0 0 20px 0"
-                }}>
-                    Question practice is the shortest path from a weak area to a focused attempt.
-                </p>
-
-                <div style={{
+            {/* Simplified One-Skill Practice Section */}
+            <div
+                className="practice-hub-card"
+                tabIndex={0}
+                style={{
+                    padding: "28px 32px",
                     display: "flex",
-                    alignItems: "flex-end",
-                    gap: "16px",
-                    flexWrap: "wrap",
-                    marginBottom: "12px"
-                }}>
-                    <div style={{ flex: 1, minWidth: "260px" }}>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
-                            Skill
-                        </label>
-                        <select
-                            value={selectedSkill}
-                            onChange={(e) => setSelectedSkill(e.target.value)}
-                            style={{
-                                width: "100%",
-                                padding: "9px 12px",
-                                borderRadius: "8px",
-                                border: "1px solid #cbd5e1",
-                                fontSize: "13px",
-                                backgroundColor: "#ffffff"
-                            }}
-                        >
-                            <option>System design</option>
-                            <option>React</option>
-                            <option>JavaScript</option>
-                            <option>Node.js & Express</option>
-                            <option>REST APIs</option>
-                            <option>Database Design & SQL</option>
-                            <option>MongoDB</option>
-                            <option>Algorithms & Data Structures</option>
-                            <option>Dynamic Programming</option>
-                            <option>Docker & Kubernetes</option>
-                            <option>Generative AI & LLMs</option>
-                        </select>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={handleQuickSkillPractice}
-                        style={{
-                            backgroundColor: "#ffffff",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: "8px",
-                            padding: "9px 16px",
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            color: "#0f172a",
-                            cursor: "pointer",
-                            whiteSpace: "nowrap"
-                        }}
-                    >
-                        Work on this skill →
-                    </button>
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "24px",
+                    flexWrap: "wrap"
+                }}
+            >
+                <div style={{ maxWidth: "680px" }}>
+                    <h3 style={{
+                        fontSize: "17px",
+                        fontWeight: "700",
+                        color: "#0f172a",
+                        margin: "0 0 6px 0"
+                    }}>
+                        Just want to work on one skill?
+                    </h3>
+                    <p style={{
+                        fontSize: "14px",
+                        color: "#475569",
+                        lineHeight: "1.5",
+                        margin: 0
+                    }}>
+                        Question practice is the shortest path from a weak area to a focused attempt.
+                    </p>
                 </div>
 
-                <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                    Suggested from your latest result: System design - 62%. You can choose any available skill.
+                <div>
+                    <button
+                        type="button"
+                        onClick={() => navigate("/practice/one-skill")}
+                        style={{
+                            backgroundColor: "#1e3a8a",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: "8px",
+                            padding: "11px 24px",
+                            fontSize: "14px",
+                            fontWeight: "600",
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                            transition: "background-color 0.15s ease"
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#1d4ed8"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#1e3a8a"; }}
+                    >
+                        Configure
+                    </button>
                 </div>
             </div>
 
