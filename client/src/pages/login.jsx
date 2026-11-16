@@ -1,15 +1,25 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { Sparkles, ShieldCheck, Target, ArrowRight, Lock, Mail, CheckCircle2 } from "lucide-react";
 import api from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 
 export default function Login() {
+    const [searchParams] = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const navigate = useNavigate();
     const { theme, toggleTheme } = useTheme();
+
+    // Prefill email if provided in query string (e.g. from invitation email)
+    useEffect(() => {
+        const queryEmail = searchParams.get("email");
+        if (queryEmail) {
+            setEmail(queryEmail.trim());
+        }
+    }, [searchParams]);
 
     const handleLogin = async (e) => {
         if (e) e.preventDefault();
@@ -25,16 +35,25 @@ export default function Login() {
             const data = response.data;
             localStorage.setItem("token", data.token || "demo-token");
             localStorage.setItem("role", data.role || "user");
-            localStorage.setItem("username", data.username || "Yash Verma");
+            localStorage.setItem("username", data.username || "Candidate");
             localStorage.setItem("email", data.email || email);
+            localStorage.setItem("mustChangePassword", data.mustChangePassword ? "true" : "false");
 
             if (data.role === "admin") {
                 navigate("/admin-dashboard");
+            } else if (data.mustChangePassword) {
+                navigate("/change-password");
             } else {
                 navigate("/dashboard");
             }
         } catch (err) {
-            // For testing prototype when backend is offline, enable fallback demo login
+            const serverMessage = err.response?.data?.message;
+            if (serverMessage) {
+                setError(serverMessage);
+                return;
+            }
+
+            // Fallback demo login for prototype testing
             const isDemoCandidate = email.includes("candidate") || email.includes("yash");
             const isDemoAdmin = email.includes("admin");
 
@@ -84,73 +103,191 @@ export default function Login() {
         setError("");
         try {
             const res = await api.post("/auth/login", {
-                email: "admin@test.com",
-                password: "password123"
+                email: "admin@aiassess.com",
+                password: "adminpassword"
             });
             const data = res.data;
             localStorage.setItem("token", data.token);
-            localStorage.setItem("role", data.role || "admin");
-            localStorage.setItem("username", data.username || "Admin User");
-            localStorage.setItem("email", data.email || "admin@test.com");
+            localStorage.setItem("role", "admin");
+            localStorage.setItem("username", data.username || "System Admin");
+            localStorage.setItem("email", data.email || "admin@aiassess.com");
             navigate("/admin-dashboard");
         } catch (err) {
-            setError(err.response?.data?.message || "Admin demo login failed");
+            setError(err.response?.data?.message || "Demo admin login failed");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div style={{ minHeight: "100vh", display: "flex", backgroundColor: "#f8fafc" }}>
+        <div style={{
+            minHeight: "100vh",
+            display: "flex",
+            backgroundColor: "#f8fafc",
+            backgroundImage: "radial-gradient(circle at 0% 0%, rgba(224, 231, 255, 0.5) 0%, rgba(248, 250, 252, 0) 50%)"
+        }}>
             {/* Left Hero / Brand Pane */}
             <div
                 style={{
-                    flex: "1",
+                    flex: "1.1",
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "space-between",
                     padding: "60px 80px",
                     backgroundColor: "#ffffff",
-                    borderRight: "1px solid #e5e7eb"
+                    borderRight: "1px solid #e2e8f0",
+                    boxShadow: "4px 0 24px rgba(15, 23, 42, 0.02)"
                 }}
             >
                 <div>
-                    <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#111827", margin: "0 0 4px 0" }}>
-                        AI Assess
-                    </h1>
-                    <p style={{ fontSize: "15px", color: "#6b7280", margin: "0 0 48px 0" }}>
-                        Intelligent interview platform
+                    {/* Brand */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                        <div style={{
+                            width: "32px",
+                            height: "32px",
+                            borderRadius: "8px",
+                            backgroundColor: "#1e3a8a",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#ffffff"
+                        }}>
+                            <Sparkles size={18} />
+                        </div>
+                        <span style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a", letterSpacing: "-0.03em" }}>
+                            AI Assess
+                        </span>
+                        <span style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                            backgroundColor: "#eff6ff",
+                            color: "#2563eb",
+                            border: "1px solid #bfdbfe",
+                            padding: "2px 8px",
+                            borderRadius: "12px"
+                        }}>
+                            v2.2
+                        </span>
+                    </div>
+
+                    <p style={{ fontSize: "15px", color: "#64748b", margin: "0 0 48px 0", lineHeight: "1.5" }}>
+                        Intelligent, calibrated technical assessment platform for engineering teams and candidates.
                     </p>
 
-                    <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "420px" }}>
-                        <div style={{ padding: "12px 16px", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px", color: "#374151" }}>
-                            • Real-time AI answer evaluation
+                    {/* Feature Cards */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "460px" }}>
+                        <div style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "14px",
+                            padding: "16px 18px",
+                            backgroundColor: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "12px",
+                            boxShadow: "0 1px 2px rgba(15, 23, 42, 0.02)"
+                        }}>
+                            <div style={{
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "8px",
+                                backgroundColor: "#eff6ff",
+                                color: "#2563eb",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0
+                            }}>
+                                <Sparkles size={16} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" }}>
+                                    Context-Aware AI Evaluation
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                    Multi-criteria rubric analysis evaluating logic, optimization, and real-world trade-offs.
+                                </div>
+                            </div>
                         </div>
-                        <div style={{ padding: "12px 16px", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px", color: "#374151" }}>
-                            • Anti-cheat telemetry &amp; focus detection
+
+                        <div style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "14px",
+                            padding: "16px 18px",
+                            backgroundColor: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "12px",
+                            boxShadow: "0 1px 2px rgba(15, 23, 42, 0.02)"
+                        }}>
+                            <div style={{
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "8px",
+                                backgroundColor: "#f0fdf4",
+                                color: "#16a34a",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0
+                            }}>
+                                <ShieldCheck size={16} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" }}>
+                                    Proctoring & Focus Telemetry
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                    Continuous tab-switch detection, fullscreen compliance, and verified exam conditions.
+                                </div>
+                            </div>
                         </div>
-                        <div style={{ padding: "12px 16px", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px", color: "#374151" }}>
-                            • Adaptive difficulty calibration
+
+                        <div style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "14px",
+                            padding: "16px 18px",
+                            backgroundColor: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "12px",
+                            boxShadow: "0 1px 2px rgba(15, 23, 42, 0.02)"
+                        }}>
+                            <div style={{
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "8px",
+                                backgroundColor: "#fef3c7",
+                                color: "#d97706",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0
+                            }}>
+                                <Target size={16} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" }}>
+                                    Targeted Skill Pathways
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                    Adaptive difficulty calibration and weak-skill recommendations to accelerate growth.
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div>
-                    <button
-                        type="button"
-                        onClick={toggleTheme}
-                        style={{
-                            background: "transparent",
-                            border: "1px solid #d1d5db",
-                            borderRadius: "6px",
-                            padding: "6px 14px",
-                            fontSize: "13px",
-                            color: "#4b5563",
-                            cursor: "pointer"
-                        }}
-                    >
-                        Light / Dark
-                    </button>
+                {/* Footer status */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "#64748b" }}>
+                        <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#16a34a", display: "inline-block" }} />
+                        <span>Systems operational</span>
+                    </div>
+                    <span style={{ fontSize: "12px", color: "#94a3b8" }}>
+                        © 2026 AI Assess Inc.
+                    </span>
                 </div>
             </div>
 
@@ -167,65 +304,114 @@ export default function Login() {
                 <div
                     style={{
                         width: "100%",
-                        maxWidth: "400px",
+                        maxWidth: "420px",
                         backgroundColor: "#ffffff",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: "12px",
-                        padding: "36px",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "16px",
+                        padding: "40px",
+                        boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.05), 0 8px 10px -6px rgba(15, 23, 42, 0.03)"
                     }}
                 >
-                    <h2 style={{ fontSize: "22px", fontWeight: "700", color: "#111827", margin: "0 0 24px 0" }}>
-                        Log in
-                    </h2>
+                    <div style={{ marginBottom: "28px" }}>
+                        <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", letterSpacing: "-0.02em", margin: "0 0 6px 0" }}>
+                            Welcome back
+                        </h2>
+                        <p style={{ fontSize: "14px", color: "#64748b", margin: 0 }}>
+                            Sign in to your candidate or examiner account.
+                        </p>
+                    </div>
 
                     {error && (
-                        <div style={{ padding: "10px 14px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "6px", color: "#dc2626", fontSize: "13px", marginBottom: "16px" }}>
-                            {error}
+                        <div style={{
+                            padding: "11px 14px",
+                            backgroundColor: "#fef2f2",
+                            border: "1px solid #fecaca",
+                            borderRadius: "8px",
+                            color: "#b91c1c",
+                            fontSize: "13px",
+                            marginBottom: "20px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px"
+                        }}>
+                            <span>⚠️</span>
+                            <span>{error}</span>
                         </div>
                     )}
 
                     <form onSubmit={handleLogin}>
                         <div style={{ marginBottom: "18px" }}>
-                            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#374151", marginBottom: "6px" }}>
-                                Email
+                            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
+                                Email address
                             </label>
-                            <input
-                                type="email"
-                                placeholder="you@example.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                style={{
-                                    width: "100%",
-                                    padding: "9px 12px",
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: "6px",
-                                    fontSize: "14px",
-                                    outline: "none"
-                                }}
-                            />
+                            <div style={{ position: "relative" }}>
+                                <input
+                                    type="email"
+                                    placeholder="you@company.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    style={{
+                                        width: "100%",
+                                        padding: "10px 14px 10px 38px",
+                                        border: "1px solid #cbd5e1",
+                                        borderRadius: "8px",
+                                        fontSize: "13.5px",
+                                        color: "#0f172a",
+                                        backgroundColor: "#ffffff",
+                                        outline: "none",
+                                        boxSizing: "border-box",
+                                        transition: "border-color 0.15s ease, box-shadow 0.15s ease"
+                                    }}
+                                    onFocus={(e) => {
+                                        e.target.style.borderColor = "#3b82f6";
+                                        e.target.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.15)";
+                                    }}
+                                    onBlur={(e) => {
+                                        e.target.style.borderColor = "#cbd5e1";
+                                        e.target.style.boxShadow = "none";
+                                    }}
+                                />
+                                <Mail size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
+                            </div>
                         </div>
 
                         <div style={{ marginBottom: "24px" }}>
-                            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#374151", marginBottom: "6px" }}>
-                                Password
-                            </label>
-                            <input
-                                type="password"
-                                placeholder="Password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                style={{
-                                    width: "100%",
-                                    padding: "9px 12px",
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: "6px",
-                                    fontSize: "14px",
-                                    outline: "none"
-                                }}
-                            />
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                                <label style={{ fontSize: "13px", fontWeight: "600", color: "#334155" }}>
+                                    Password
+                                </label>
+                            </div>
+                            <div style={{ position: "relative" }}>
+                                <input
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    style={{
+                                        width: "100%",
+                                        padding: "10px 14px 10px 38px",
+                                        border: "1px solid #cbd5e1",
+                                        borderRadius: "8px",
+                                        fontSize: "13.5px",
+                                        color: "#0f172a",
+                                        backgroundColor: "#ffffff",
+                                        outline: "none",
+                                        boxSizing: "border-box",
+                                        transition: "border-color 0.15s ease, box-shadow 0.15s ease"
+                                    }}
+                                    onFocus={(e) => {
+                                        e.target.style.borderColor = "#3b82f6";
+                                        e.target.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.15)";
+                                    }}
+                                    onBlur={(e) => {
+                                        e.target.style.borderColor = "#cbd5e1";
+                                        e.target.style.boxShadow = "none";
+                                    }}
+                                />
+                                <Lock size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
+                            </div>
                         </div>
 
                         <button
@@ -233,24 +419,31 @@ export default function Login() {
                             disabled={loading}
                             style={{
                                 width: "100%",
-                                padding: "10px",
-                                backgroundColor: "#0f172a",
+                                padding: "11px",
+                                backgroundColor: loading ? "#94a3b8" : "#1e3a8a",
                                 color: "#ffffff",
                                 border: "none",
-                                borderRadius: "6px",
+                                borderRadius: "8px",
                                 fontSize: "14px",
                                 fontWeight: "600",
-                                cursor: "pointer",
-                                marginBottom: "16px"
+                                cursor: loading ? "not-allowed" : "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "6px",
+                                boxShadow: "0 2px 4px rgba(30, 58, 138, 0.15)",
+                                transition: "background-color 0.15s ease"
                             }}
+                            onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = "#1d4ed8"; }}
+                            onMouseLeave={(e) => { if (!loading) e.currentTarget.style.backgroundColor = "#1e3a8a"; }}
                         >
-                            {loading ? "Logging in..." : "Log in"}
+                            {loading ? "Authenticating..." : "Sign in →"}
                         </button>
                     </form>
 
                     {/* Quick Demo Access Buttons */}
-                    <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "16px", marginTop: "8px", marginBottom: "16px" }}>
-                        <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
+                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "20px", marginTop: "20px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "10px" }}>
                             Quick Demo Sign-In
                         </div>
                         <div style={{ display: "flex", gap: "8px" }}>
@@ -259,14 +452,23 @@ export default function Login() {
                                 onClick={loginAsDemoCandidate}
                                 style={{
                                     flex: 1,
-                                    padding: "7px 10px",
-                                    backgroundColor: "#eff6ff",
-                                    border: "1px solid #bfdbfe",
-                                    borderRadius: "6px",
-                                    color: "#2563eb",
-                                    fontSize: "12px",
+                                    padding: "8px 12px",
+                                    backgroundColor: "#f8fafc",
+                                    border: "1px solid #cbd5e1",
+                                    borderRadius: "8px",
+                                    color: "#1e3a8a",
+                                    fontSize: "12.5px",
                                     fontWeight: "600",
-                                    cursor: "pointer"
+                                    cursor: "pointer",
+                                    transition: "all 0.15s ease"
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "#eff6ff";
+                                    e.currentTarget.style.borderColor = "#3b82f6";
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "#f8fafc";
+                                    e.currentTarget.style.borderColor = "#cbd5e1";
                                 }}
                             >
                                 Candidate Demo
@@ -276,14 +478,23 @@ export default function Login() {
                                 onClick={loginAsDemoAdmin}
                                 style={{
                                     flex: 1,
-                                    padding: "7px 10px",
-                                    backgroundColor: "#f3f4f6",
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: "6px",
-                                    color: "#1f2937",
-                                    fontSize: "12px",
+                                    padding: "8px 12px",
+                                    backgroundColor: "#f8fafc",
+                                    border: "1px solid #cbd5e1",
+                                    borderRadius: "8px",
+                                    color: "#0f172a",
+                                    fontSize: "12.5px",
                                     fontWeight: "600",
-                                    cursor: "pointer"
+                                    cursor: "pointer",
+                                    transition: "all 0.15s ease"
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "#f1f5f9";
+                                    e.currentTarget.style.borderColor = "#94a3b8";
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "#f8fafc";
+                                    e.currentTarget.style.borderColor = "#cbd5e1";
                                 }}
                             >
                                 Admin Demo
@@ -291,10 +502,10 @@ export default function Login() {
                         </div>
                     </div>
 
-                    <div style={{ textAlign: "center", fontSize: "13px", color: "#6b7280" }}>
-                        No account?{" "}
-                        <Link to="/register" style={{ color: "#2563eb", textDecoration: "none", fontWeight: "600" }}>
-                            Register
+                    <div style={{ textAlign: "center", marginTop: "20px", fontSize: "13px", color: "#64748b" }}>
+                        Don't have an account?{" "}
+                        <Link to="/register" style={{ color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>
+                            Register now
                         </Link>
                     </div>
                 </div>

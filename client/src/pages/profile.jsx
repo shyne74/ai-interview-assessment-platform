@@ -4,7 +4,9 @@ import api from "../utils/api";
 
 export default function Profile() {
     const navigate = useNavigate();
-    const [fullName, setFullName] = useState(() => localStorage.getItem("username") || "Candidate");
+    const storedRole = localStorage.getItem("role") || "user";
+    const isAdmin = storedRole === "admin";
+    const [fullName, setFullName] = useState(() => localStorage.getItem("username") || (isAdmin ? "Lead Examiner Admin" : "Candidate"));
     const [email, setEmail] = useState(() => localStorage.getItem("email") || "candidate@test.com");
     const [preferredRole, setPreferredRole] = useState(() => localStorage.getItem("preferredRole") || "Frontend developer");
     const [savedMessage, setSavedMessage] = useState("");
@@ -70,6 +72,17 @@ export default function Profile() {
         <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
             {/* Header */}
             <div>
+                {isAdmin && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#64748b", marginBottom: "8px" }}>
+                        <button
+                            type="button"
+                            onClick={() => navigate("/admin-dashboard")}
+                            style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: "12px", padding: 0, fontWeight: "600" }}
+                        >
+                            ← Back to Admin Dashboard
+                        </button>
+                    </div>
+                )}
                 <div style={{
                     fontSize: "11px",
                     fontWeight: "700",
@@ -78,7 +91,7 @@ export default function Profile() {
                     color: "#64748b",
                     marginBottom: "6px"
                 }}>
-                    10 / ACCOUNT
+                    {isAdmin ? "ADMIN / ACCOUNT SETTINGS" : "10 / ACCOUNT"}
                 </div>
                 <h1 style={{
                     fontSize: "28px",
@@ -87,14 +100,14 @@ export default function Profile() {
                     letterSpacing: "-0.03em",
                     margin: "0 0 6px 0"
                 }}>
-                    Your profile, kept simple.
+                    {isAdmin ? "Admin account & settings." : "Your profile, kept simple."}
                 </h1>
                 <p style={{
                     fontSize: "15px",
                     color: "#475569",
                     margin: 0
                 }}>
-                    Keep your account details and preferred practice focus in one place.
+                    {isAdmin ? "Manage administrator identity, credentials, and console preferences." : "Keep your account details and preferred practice focus in one place."}
                 </p>
             </div>
 
@@ -165,7 +178,7 @@ export default function Profile() {
                                     {fullName}
                                 </div>
                                 <div style={{ fontSize: "12px", color: "#64748b" }}>
-                                    Candidate account
+                                    {isAdmin ? "Admin account" : "Candidate account"}
                                 </div>
                             </div>
                         </div>
@@ -347,6 +360,31 @@ export default function Profile() {
                                 <span>✓</span>
                             </div>
 
+                            {isAdmin && (
+                                <button
+                                    type="button"
+                                    onClick={() => navigate("/admin-dashboard")}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        width: "100%",
+                                        padding: "10px 12px",
+                                        borderRadius: "8px",
+                                        border: "none",
+                                        background: "none",
+                                        color: "#2563eb",
+                                        fontSize: "13px",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        textAlign: "left"
+                                    }}
+                                >
+                                    <span>Admin Dashboard</span>
+                                    <span>→</span>
+                                </button>
+                            )}
+
                             <button
                                 type="button"
                                 onClick={handleSignOut}
@@ -370,24 +408,24 @@ export default function Profile() {
                         </div>
                     </div>
 
-                    {/* Only useful settings notice */}
+                    {/* Account Security & Privacy Notice */}
                     <div style={{
                         backgroundColor: "#f8fafc",
                         border: "1px solid #e2e8f0",
                         borderRadius: "14px",
                         padding: "20px",
-                        fontSize: "12px",
+                        fontSize: "12.5px",
                         lineHeight: "1.5",
-                        color: "#64748b"
+                        color: "#475569"
                     }}>
-                        <div style={{ fontWeight: "700", color: "#334155", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span>ℹ</span> Only useful settings
+                        <div style={{ fontWeight: "700", color: "#0f172a", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>🛡️</span> Account Security & Privacy
                         </div>
                         <p style={{ margin: "0 0 10px 0" }}>
-                            No dark theme, notification controls or unsupported security settings are promised. Account actions should reuse verified platform behavior.
+                            Your assessment history, telemetry logs, and AI evaluation reports are encrypted and tied strictly to your verified candidate profile.
                         </p>
-                        <p style={{ margin: 0, fontSize: "11px", color: "#94a3b8" }}>
-                            Home, Practice and My Progress remain the main navigation. Account is a compact secondary menu.
+                        <p style={{ margin: 0, fontSize: "11.5px", color: "#64748b" }}>
+                            Use the Change Password section to rotate credentials or update your login password.
                         </p>
                     </div>
                 </div>

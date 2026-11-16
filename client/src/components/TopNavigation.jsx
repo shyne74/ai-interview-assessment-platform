@@ -2,18 +2,23 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../utils/api";
 import {
-    BrainIcon,
-    SearchIcon,
-    UserIcon,
-    LogOutIcon,
-    ChevronDownIcon,
-    ShieldIcon,
-    SettingsIcon,
-    ClockIcon,
-    FileTextIcon,
-    PlusIcon,
-    CheckCircleIcon
-} from "./icons";
+    Search,
+    ChevronDown,
+    User,
+    Clock,
+    Settings,
+    Shield,
+    LogOut,
+    Sparkles,
+    Briefcase,
+    Layers,
+    BookOpen,
+    Code,
+    FileText,
+    Plus,
+    X,
+    Loader2
+} from "lucide-react";
 
 export default function TopNavigation() {
     const location = useLocation();
@@ -30,6 +35,7 @@ export default function TopNavigation() {
     const userMenuRef = useRef(null);
     const moreMenuRef = useRef(null);
     const searchRef = useRef(null);
+    const searchInputRef = useRef(null);
 
     const path = location.pathname;
     const storedRole = localStorage.getItem("role") || "user";
@@ -41,7 +47,8 @@ export default function TopNavigation() {
         path === "/roles" ||
         path === "/candidate-data" ||
         path === "/codeforces" ||
-        path.startsWith("/aigenerator")
+        path.startsWith("/aigenerator") ||
+        (isRealAdmin && (path.startsWith("/results/") || path === "/profile" || path === "/settings"))
     );
 
     // Strictly enforce admin mode only if the logged-in user is genuinely an admin
@@ -91,7 +98,30 @@ export default function TopNavigation() {
         return () => clearTimeout(timer);
     }, [searchQuery]);
 
-    const username = localStorage.getItem("username") || (isAdminMode ? "Admin" : "Alex Morgan");
+    // Ctrl+K / Cmd+K listener to focus search input
+    useEffect(() => {
+        function handleKeyDown(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            }
+        }
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, []);
+
+    const rawUsername = localStorage.getItem("username") || (isAdminMode ? "Admin" : "Alex Morgan");
+    const username = rawUsername.replace(/^\[+|\]+$/g, "").trim();
+
+    const getInitials = (name) => {
+        if (!name) return "U";
+        const parts = name.trim().split(/\s+/);
+        if (parts.length >= 2) {
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        }
+        return name.slice(0, 2).toUpperCase();
+    };
+    const userInitials = getInitials(username);
 
     const toggleRole = () => {
         if (!isRealAdmin) return;
@@ -129,7 +159,7 @@ export default function TopNavigation() {
                 {/* Left: Brand + Role Badge + Nav Links */}
                 <div className="wf-nav-left">
                     <Link
-                        to={isAdminMode ? "/admin-dashboard" : "/dashboard"}
+                        to={isRealAdmin ? "/admin-dashboard" : "/dashboard"}
                         className="wf-brand-link"
                     >
                         <span className="wf-brand-title">AI Assess</span>
@@ -172,6 +202,12 @@ export default function TopNavigation() {
                                 >
                                     Candidates
                                 </Link>
+                                <Link
+                                    to="/admin/batches"
+                                    className={`wf-nav-item ${path.startsWith("/admin/batches") ? "active" : ""}`}
+                                >
+                                    Exam batches
+                                </Link>
 
                                 {/* More Dropdown */}
                                 <div className="position-relative" ref={moreMenuRef}>
@@ -184,6 +220,13 @@ export default function TopNavigation() {
                                     </button>
                                     {moreMenuOpen && (
                                         <div className="wf-menu-dropdown">
+                                            <Link
+                                                to="/admin/batches/new"
+                                                className="wf-menu-item"
+                                                onClick={() => setMoreMenuOpen(false)}
+                                            >
+                                                + New Exam Batch
+                                            </Link>
                                             <Link
                                                 to="/admin/candidates/add"
                                                 className="wf-menu-item"
@@ -264,15 +307,30 @@ export default function TopNavigation() {
                 <div className="wf-nav-right">
                     {/* Live Search Input Box */}
                     <div className="wf-search-box position-relative" ref={searchRef}>
-                        <span className="wf-search-icon">🔍</span>
+                        <Search size={14} style={{ color: "#64748b", flexShrink: 0 }} />
                         <input
+                            ref={searchInputRef}
                             type="text"
-                            placeholder="Search roles, topics, problems..."
+                            placeholder="Search roles, topics..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onFocus={() => { if (searchQuery.trim().length >= 2) setSearchOpen(true); }}
                             className="wf-search-input"
                         />
+                        <span style={{
+                            fontSize: "10.5px",
+                            padding: "1px 5px",
+                            borderRadius: "4px",
+                            backgroundColor: "#f1f5f9",
+                            color: "#64748b",
+                            border: "1px solid #e2e8f0",
+                            fontWeight: "500",
+                            userSelect: "none",
+                            lineHeight: "1.4",
+                            flexShrink: 0
+                        }}>
+                            Ctrl K
+                        </span>
                         {searchQuery && (
                             <button
                                 type="button"
@@ -282,11 +340,12 @@ export default function TopNavigation() {
                                     background: "none",
                                     color: "#94a3b8",
                                     cursor: "pointer",
-                                    padding: "0 6px",
-                                    fontSize: "12px"
+                                    padding: "0 4px",
+                                    display: "flex",
+                                    alignItems: "center"
                                 }}
                             >
-                                ✕
+                                <X size={13} />
                             </button>
                         )}
 
@@ -309,8 +368,9 @@ export default function TopNavigation() {
                                 padding: "8px 0"
                             }}>
                                 {searchLoading ? (
-                                    <div style={{ padding: "16px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
-                                        ⏳ Searching platform resources...
+                                    <div style={{ padding: "16px", textAlign: "center", color: "#64748b", fontSize: "13px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                                        <Loader2 size={16} className="animate-spin" style={{ color: "#16a34a" }} />
+                                        <span>Searching platform resources...</span>
                                     </div>
                                 ) : !hasSearchResults ? (
                                     <div style={{ padding: "16px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
@@ -321,22 +381,23 @@ export default function TopNavigation() {
                                         {/* 1. Roles & Domains */}
                                         {searchResults.roles && searchResults.roles.length > 0 && (
                                             <div>
-                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc" }}>
-                                                    🎯 Engineering Domains & Roles
+                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "600", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    <Briefcase size={12} />
+                                                    <span>Engineering Domains & Roles</span>
                                                 </div>
                                                 {searchResults.roles.map((r, i) => (
                                                     <div
                                                         key={i}
                                                         onClick={() => handleSelectSearchResult(r.url)}
                                                         style={{ padding: "8px 14px", cursor: "pointer", fontSize: "13px", color: "#0f172a", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f1f5f9" }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f0f7ff"}
+                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f0fdf4"}
                                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                                                     >
                                                         <div>
-                                                            <div style={{ fontWeight: "700", color: "#1e3a8a" }}>{r.title}</div>
+                                                            <div style={{ fontWeight: "600", color: "#0f172a" }}>{r.title}</div>
                                                             {r.description && <div style={{ fontSize: "11px", color: "#64748b" }}>{r.description}</div>}
                                                         </div>
-                                                        <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: "600" }}>Choose Domain →</span>
+                                                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>Choose Domain →</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -345,8 +406,9 @@ export default function TopNavigation() {
                                         {/* 2. Technical Skills & Technologies */}
                                         {searchResults.skills && searchResults.skills.length > 0 && (
                                             <div>
-                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc" }}>
-                                                    🏷️ Technical Skills & Technologies
+                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "600", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    <Layers size={12} />
+                                                    <span>Skills & Technologies</span>
                                                 </div>
                                                 {searchResults.skills.map((s, i) => (
                                                     <div
@@ -360,7 +422,7 @@ export default function TopNavigation() {
                                                             <div style={{ fontWeight: "600", color: "#0f172a" }}>{s.skill}</div>
                                                             <div style={{ fontSize: "11px", color: "#64748b" }}>Domain: {s.role}</div>
                                                         </div>
-                                                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: "600" }}>Practice Skill →</span>
+                                                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>Practice Skill →</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -369,22 +431,23 @@ export default function TopNavigation() {
                                         {/* 3. Topics & Concepts */}
                                         {searchResults.topics && searchResults.topics.length > 0 && (
                                             <div>
-                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc" }}>
-                                                    📚 Topics & Concepts
+                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "600", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    <BookOpen size={12} />
+                                                    <span>Topics & Concepts</span>
                                                 </div>
                                                 {searchResults.topics.map((t, i) => (
                                                     <div
                                                         key={i}
                                                         onClick={() => handleSelectSearchResult(t.url)}
                                                         style={{ padding: "8px 14px", cursor: "pointer", fontSize: "13px", color: "#0f172a", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f1f5f9" }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#faf5ff"}
+                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f0fdf4"}
                                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                                                     >
                                                         <div>
                                                             <div style={{ fontWeight: "600", color: "#0f172a" }}>{t.topic}</div>
                                                             <div style={{ fontSize: "11px", color: "#64748b" }}>Domain: {t.role}</div>
                                                         </div>
-                                                        <span style={{ fontSize: "11px", color: "#7c3aed", fontWeight: "600" }}>Target Topic →</span>
+                                                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>Target Topic →</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -393,15 +456,16 @@ export default function TopNavigation() {
                                         {/* 4. Coding Problems */}
                                         {searchResults.codingProblems && searchResults.codingProblems.length > 0 && (
                                             <div>
-                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc" }}>
-                                                    💻 Coding Problems
+                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "600", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    <Code size={12} />
+                                                    <span>Coding Problems</span>
                                                 </div>
                                                 {searchResults.codingProblems.map((cp, i) => (
                                                     <div
                                                         key={i}
                                                         onClick={() => handleSelectSearchResult(cp.url)}
                                                         style={{ padding: "8px 14px", cursor: "pointer", fontSize: "13px", color: "#0f172a", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f1f5f9" }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#fff7ed"}
+                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f0fdf4"}
                                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                                                     >
                                                         <div>
@@ -410,7 +474,7 @@ export default function TopNavigation() {
                                                                  Difficulty: {cp.difficulty} · {(cp.tags || []).slice(0, 2).join(", ")}
                                                             </div>
                                                         </div>
-                                                        <span style={{ fontSize: "11px", color: "#ea580c", fontWeight: "600" }}>Code Challenge →</span>
+                                                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>Challenge →</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -419,8 +483,9 @@ export default function TopNavigation() {
                                         {/* 5. Past Assessments */}
                                         {searchResults.pastAssessments && searchResults.pastAssessments.length > 0 && (
                                             <div>
-                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc" }}>
-                                                    📋 Past Assessments
+                                                <div style={{ padding: "6px 14px", fontSize: "11px", fontWeight: "600", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", backgroundColor: "#f8fafc", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    <FileText size={12} />
+                                                    <span>Past Assessments</span>
                                                 </div>
                                                 {searchResults.pastAssessments.map((pa, i) => (
                                                     <div
@@ -434,7 +499,7 @@ export default function TopNavigation() {
                                                             <div style={{ fontWeight: "600" }}>{pa.title}</div>
                                                             <div style={{ fontSize: "11px", color: "#64748b" }}>{pa.subtitle}</div>
                                                         </div>
-                                                        <span style={{ fontSize: "11px", color: "#475569", fontWeight: "600" }}>View Result →</span>
+                                                        <span style={{ fontSize: "11px", color: "#475569", fontWeight: "500" }}>View Result →</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -453,9 +518,31 @@ export default function TopNavigation() {
                             onClick={() => setUserMenuOpen(!userMenuOpen)}
                             aria-expanded={userMenuOpen}
                         >
-                            <span className="wf-user-icon">👤</span>
-                            <span className="wf-user-name">[{username}]</span>
-                            <span className="wf-caret">▾</span>
+                            <div style={{
+                                width: "26px",
+                                height: "26px",
+                                borderRadius: "50%",
+                                backgroundColor: "#ecfdf5",
+                                color: "#16a34a",
+                                border: "1px solid #bbf7d0",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                flexShrink: 0
+                            }}>
+                                {userInitials}
+                            </div>
+                            <span style={{ fontSize: "13px", fontWeight: "500", color: "#1e293b" }}>{username}</span>
+                            <ChevronDown
+                                size={14}
+                                style={{
+                                    color: "#64748b",
+                                    transition: "transform 0.2s ease",
+                                    transform: userMenuOpen ? "rotate(180deg)" : "rotate(0deg)"
+                                }}
+                            />
                         </button>
 
                         {userMenuOpen && (
@@ -475,15 +562,19 @@ export default function TopNavigation() {
                                             to="/profile"
                                             className="wf-menu-item"
                                             onClick={() => setUserMenuOpen(false)}
+                                            style={{ display: "flex", alignItems: "center", gap: "8px" }}
                                         >
-                                            Profile & Settings
+                                            <User size={14} style={{ color: "#64748b" }} />
+                                            <span>Profile & Settings</span>
                                         </Link>
                                         <Link
                                             to="/history"
                                             className="wf-menu-item"
                                             onClick={() => setUserMenuOpen(false)}
+                                            style={{ display: "flex", alignItems: "center", gap: "8px" }}
                                         >
-                                            My progress & history
+                                            <Clock size={14} style={{ color: "#64748b" }} />
+                                            <span>My progress & history</span>
                                         </Link>
                                     </>
                                 )}
@@ -494,8 +585,19 @@ export default function TopNavigation() {
                                             to="/admin/candidates/add"
                                             className="wf-menu-item"
                                             onClick={() => setUserMenuOpen(false)}
+                                            style={{ display: "flex", alignItems: "center", gap: "8px" }}
                                         >
-                                            + Add candidates
+                                            <Plus size={14} style={{ color: "#64748b" }} />
+                                            <span>Add candidates</span>
+                                        </Link>
+                                        <Link
+                                            to="/profile"
+                                            className="wf-menu-item"
+                                            onClick={() => setUserMenuOpen(false)}
+                                            style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                                        >
+                                            <User size={14} style={{ color: "#64748b" }} />
+                                            <span>Admin Profile & Settings</span>
                                         </Link>
                                         <div className="wf-menu-divider" />
                                         <button
@@ -516,8 +618,10 @@ export default function TopNavigation() {
                                             type="button"
                                             className="wf-menu-item text-primary fw-medium text-start w-100 border-0 bg-transparent"
                                             onClick={toggleRole}
+                                            style={{ display: "flex", alignItems: "center", gap: "8px" }}
                                         >
-                                            Switch to Admin Console →
+                                            <Shield size={14} style={{ color: "#16a34a" }} />
+                                            <span>Switch to Admin Console →</span>
                                         </button>
                                     </>
                                 )}
@@ -528,8 +632,10 @@ export default function TopNavigation() {
                                     type="button"
                                     className="wf-menu-item text-danger text-start w-100 border-0 bg-transparent"
                                     onClick={handleLogout}
+                                    style={{ display: "flex", alignItems: "center", gap: "8px" }}
                                 >
-                                    Log out
+                                    <LogOut size={14} style={{ color: "#dc2626" }} />
+                                    <span>Log out</span>
                                 </button>
                             </div>
                         )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import api from "../utils/api";
 
@@ -8,6 +8,8 @@ export default function QuestionBank() {
 
     // Folders / Roles
     const [roles, setRoles] = useState([]);
+    const [dbTotalQuestions, setDbTotalQuestions] = useState(0);
+    const [otherQuestionsCount, setOtherQuestionsCount] = useState(0);
     const [selectedRole, setSelectedRole] = useState("all");
 
     // Questions State (Server-side paginated)
@@ -64,6 +66,12 @@ export default function QuestionBank() {
             const res = await api.get("/roles");
             const list = res.data.roles || [];
             setRoles(list);
+            if (res.data.totalQuestions !== undefined) {
+                setDbTotalQuestions(res.data.totalQuestions);
+            }
+            if (res.data.otherCount !== undefined) {
+                setOtherQuestionsCount(res.data.otherCount);
+            }
             if (list.length > 0 && !newRole) {
                 setNewRole(list[0].title);
             }
@@ -96,28 +104,49 @@ export default function QuestionBank() {
                 setQuestions(data);
                 setTotalQuestions(data.length);
                 setTotalPages(1);
-                if (data.length > 0 && (!selectedQuestion || !data.find(q => q._id === selectedQuestion._id))) {
-                    setSelectedQuestion(data[0]);
-                }
+                setSelectedQuestion(data.length > 0 ? data[0] : null);
             } else if (data && Array.isArray(data.questions)) {
                 setQuestions(data.questions);
                 setTotalQuestions(data.total || 0);
                 setTotalPages(data.totalPages || 1);
-                if (data.questions.length > 0 && (!selectedQuestion || !data.questions.find(q => q._id === selectedQuestion._id))) {
-                    setSelectedQuestion(data.questions[0]);
-                }
+                const matched = data.questions.find(q => selectedQuestion && q._id === selectedQuestion._id);
+                setSelectedQuestion(matched || (data.questions.length > 0 ? data.questions[0] : null));
             } else {
                 setQuestions([]);
                 setTotalQuestions(0);
                 setTotalPages(1);
+                setSelectedQuestion(null);
             }
         } catch (err) {
             console.error("Failed to load questions:", err);
             setErrorToast("Failed to fetch questions from server.");
+            setSelectedQuestion(null);
         } finally {
             setLoading(false);
         }
     };
+
+    const handleSelectRole = (roleKey) => {
+        setSelectedRole(roleKey);
+        setCurrentPage(1);
+        setSelectedQuestion(null);
+        setSelectedIds(new Set());
+    };
+
+    const activeFolderCount = useMemo(() => {
+        if (selectedRole === "all") {
+            return dbTotalQuestions || (roles.reduce((sum, r) => sum + (r.questions || r.questionCount || 0), 0) + otherQuestionsCount);
+        }
+        if (selectedRole === "other") {
+            return otherQuestionsCount;
+        }
+        const matched = roles.find(r => r.title.toLowerCase() === selectedRole.toLowerCase());
+        return matched ? (matched.questions ?? matched.questionCount ?? 0) : 0;
+    }, [selectedRole, roles, dbTotalQuestions, otherQuestionsCount]);
+
+    const hasActiveFilters = Boolean(
+        searchTerm.trim() || statusFilter !== "all" || difficultyFilter !== "all"
+    );
 
     // Debounce search
     useEffect(() => {
@@ -144,10 +173,10 @@ export default function QuestionBank() {
         setSelectedIds(next);
     };
 
-    // Single Question Actions: Approve
+    // Single Question Actions: Approve / Restore
     const handleApprove = async (question) => {
         const prevStatus = question.status;
-        // Optimistic UI update
+        const isRestore = prevStatus === "rejected";
         setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: "approved" } : q));
         if (selectedQuestion?._id === question._id) {
             setSelectedQuestion(prev => ({ ...prev, status: "approved" }));
@@ -155,10 +184,9 @@ export default function QuestionBank() {
 
         try {
             await api.patch(`/question/${question._id}/approve`);
-            setActionToast(`Question approved and published.`);
+            setActionToast(isRestore ? "Question restored and approved." : "Question approved and published.");
             fetchRoles();
         } catch (err) {
-            // Rollback on error
             setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: prevStatus } : q));
             if (selectedQuestion?._id === question._id) {
                 setSelectedQuestion(prev => ({ ...prev, status: prevStatus }));
@@ -169,9 +197,10 @@ export default function QuestionBank() {
         }
     };
 
-    // Single Question Actions: Reject
+    // Single Question Actions: Reject / Revoke
     const handleReject = async (question) => {
         const prevStatus = question.status;
+        const isRevoke = prevStatus === "approved";
         setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: "rejected" } : q));
         if (selectedQuestion?._id === question._id) {
             setSelectedQuestion(prev => ({ ...prev, status: "rejected" }));
@@ -179,7 +208,7 @@ export default function QuestionBank() {
 
         try {
             await api.patch(`/question/${question._id}/rejected`);
-            setActionToast(`Question moved to rejected status.`);
+            setActionToast(isRevoke ? "Question revoked and rejected." : "Question moved to rejected status.");
             fetchRoles();
         } catch (err) {
             setQuestions(prev => prev.map(q => q._id === question._id ? { ...q, status: prevStatus } : q));
@@ -215,23 +244,34 @@ export default function QuestionBank() {
         }
     };
 
-    // Bulk Actions: Approve, Reject, Delete
+    // Bulk Actions: Approve, Reject, Delete (Status-aware: skips questions already in target status)
     const handleBulkApprove = async () => {
         if (selectedIds.size === 0) return;
         setBulkProcessing(true);
+        const selectedQuestions = questions.filter(q => selectedIds.has(q._id));
+        const alreadyApproved = selectedQuestions.filter(q => q.status === "approved");
+        const toProcess = selectedQuestions.filter(q => q.status !== "approved");
+
         let successCount = 0;
-        for (const id of selectedIds) {
+        for (const q of toProcess) {
             try {
-                await api.patch(`/question/${id}/approve`);
+                await api.patch(`/question/${q._id}/approve`);
                 successCount++;
             } catch (err) {
-                console.warn(`Failed to approve ${id}`);
+                console.warn(`Failed to approve ${q._id}`);
             }
         }
-        setActionToast(`Approved ${successCount} of ${selectedIds.size} questions.`);
+
+        // Optimistically update questions list and selected question immediately
+        setQuestions(prev => prev.map(q => selectedIds.has(q._id) ? { ...q, status: "approved" } : q));
+        if (selectedQuestion && selectedIds.has(selectedQuestion._id)) {
+            setSelectedQuestion(prev => ({ ...prev, status: "approved" }));
+        }
+
+        const skippedMsg = alreadyApproved.length > 0 ? ` (${alreadyApproved.length} already approved skipped)` : "";
+        setActionToast(`Approved ${successCount} questions${skippedMsg}.`);
         setSelectedIds(new Set());
         setBulkProcessing(false);
-        fetchQuestions();
         fetchRoles();
         setTimeout(() => setActionToast(""), 4000);
     };
@@ -239,19 +279,30 @@ export default function QuestionBank() {
     const handleBulkReject = async () => {
         if (selectedIds.size === 0) return;
         setBulkProcessing(true);
+        const selectedQuestions = questions.filter(q => selectedIds.has(q._id));
+        const alreadyRejected = selectedQuestions.filter(q => q.status === "rejected");
+        const toProcess = selectedQuestions.filter(q => q.status !== "rejected");
+
         let successCount = 0;
-        for (const id of selectedIds) {
+        for (const q of toProcess) {
             try {
-                await api.patch(`/question/${id}/rejected`);
+                await api.patch(`/question/${q._id}/rejected`);
                 successCount++;
             } catch (err) {
-                console.warn(`Failed to reject ${id}`);
+                console.warn(`Failed to reject ${q._id}`);
             }
         }
-        setActionToast(`Rejected ${successCount} of ${selectedIds.size} questions.`);
+
+        // Optimistically update questions list and selected question immediately
+        setQuestions(prev => prev.map(q => selectedIds.has(q._id) ? { ...q, status: "rejected" } : q));
+        if (selectedQuestion && selectedIds.has(selectedQuestion._id)) {
+            setSelectedQuestion(prev => ({ ...prev, status: "rejected" }));
+        }
+
+        const skippedMsg = alreadyRejected.length > 0 ? ` (${alreadyRejected.length} already rejected skipped)` : "";
+        setActionToast(`Rejected ${successCount} questions${skippedMsg}.`);
         setSelectedIds(new Set());
         setBulkProcessing(false);
-        fetchQuestions();
         fetchRoles();
         setTimeout(() => setActionToast(""), 4000);
     };
@@ -503,7 +554,7 @@ export default function QuestionBank() {
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                         <button
                             type="button"
-                            onClick={() => { setSelectedRole("all"); setCurrentPage(1); }}
+                            onClick={() => handleSelectRole("all")}
                             style={{
                                 display: "flex",
                                 justifyContent: "space-between",
@@ -521,7 +572,7 @@ export default function QuestionBank() {
                         >
                             <span>📁 All Roles</span>
                             <span style={{ fontSize: "11px", color: "#6b7280", backgroundColor: "#e2e8f0", padding: "2px 6px", borderRadius: "10px" }}>
-                                {roles.reduce((sum, r) => sum + (r.questions || r.questionCount || 0), 0)}
+                                {dbTotalQuestions || (roles.reduce((sum, r) => sum + (r.questions || r.questionCount || 0), 0) + otherQuestionsCount)}
                             </span>
                         </button>
 
@@ -529,7 +580,7 @@ export default function QuestionBank() {
                             <button
                                 key={r._id || r.title}
                                 type="button"
-                                onClick={() => { setSelectedRole(r.title); setCurrentPage(1); }}
+                                onClick={() => handleSelectRole(r.title)}
                                 style={{
                                     display: "flex",
                                     justifyContent: "space-between",
@@ -537,9 +588,9 @@ export default function QuestionBank() {
                                     padding: "10px 12px",
                                     borderRadius: "8px",
                                     border: "none",
-                                    backgroundColor: selectedRole === r.title ? "#f0f7ff" : "transparent",
-                                    color: selectedRole === r.title ? "#1e40af" : "#374151",
-                                    fontWeight: selectedRole === r.title ? "700" : "500",
+                                    backgroundColor: selectedRole.toLowerCase() === r.title.toLowerCase() ? "#f0f7ff" : "transparent",
+                                    color: selectedRole.toLowerCase() === r.title.toLowerCase() ? "#1e40af" : "#374151",
+                                    fontWeight: selectedRole.toLowerCase() === r.title.toLowerCase() ? "700" : "500",
                                     fontSize: "13px",
                                     textAlign: "left",
                                     cursor: "pointer"
@@ -553,6 +604,32 @@ export default function QuestionBank() {
                                 </span>
                             </button>
                         ))}
+
+                        <button
+                            type="button"
+                            onClick={() => handleSelectRole("other")}
+                            style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                padding: "10px 12px",
+                                borderRadius: "8px",
+                                border: "none",
+                                backgroundColor: selectedRole === "other" ? "#f0f7ff" : "transparent",
+                                color: selectedRole === "other" ? "#1e40af" : "#374151",
+                                fontWeight: selectedRole === "other" ? "700" : "500",
+                                fontSize: "13px",
+                                textAlign: "left",
+                                cursor: "pointer"
+                            }}
+                        >
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: "6px" }}>
+                                📁 Other / Uncategorized
+                            </span>
+                            <span style={{ fontSize: "11px", color: "#6b7280", backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: "10px" }}>
+                                {otherQuestionsCount}
+                            </span>
+                        </button>
                     </div>
                 </div>
 
@@ -709,7 +786,9 @@ export default function QuestionBank() {
                         {!loading && questions.length > 0 && (
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderTop: "1px solid #e5e7eb", fontSize: "12px", color: "#6b7280" }}>
                                 <div>
-                                    Total {totalQuestions} questions
+                                    {hasActiveFilters
+                                        ? `Showing ${totalQuestions} of ${activeFolderCount} questions`
+                                        : `${totalQuestions} questions`}
                                 </div>
                                 <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                                     <button
@@ -746,8 +825,14 @@ export default function QuestionBank() {
                     </div>
 
                     {!selectedQuestion ? (
-                        <div style={{ padding: "30px 10px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
-                            Select any question to inspect its ideal answer, scoring rubric, and validation actions.
+                        <div style={{ padding: "40px 16px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
+                            <div style={{ fontSize: "24px", marginBottom: "8px" }}>🔍</div>
+                            <div style={{ fontWeight: "600", color: "#4b5563", marginBottom: "4px" }}>
+                                Select a question to inspect
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#9ca3af" }}>
+                                Choose any question from the catalog list to inspect its ideal answer, scoring rubric, and validation actions.
+                            </div>
                         </div>
                     ) : (
                         <div>
@@ -831,44 +916,88 @@ export default function QuestionBank() {
                                 </div>
                             </div>
 
-                            {/* Action Buttons: Approve, Reject, Edit, Delete */}
+                            {/* Action Buttons: Status-aware Approve, Reject, Edit, Delete */}
                             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                                <div style={{ display: "flex", gap: "8px" }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleApprove(selectedQuestion)}
-                                        style={{
-                                            flex: 1,
-                                            padding: "8px",
-                                            backgroundColor: "#059669",
-                                            color: "#ffffff",
-                                            border: "none",
-                                            borderRadius: "6px",
-                                            fontSize: "12px",
-                                            fontWeight: "600",
-                                            cursor: "pointer"
-                                        }}
-                                    >
-                                        ✓ Approve
-                                    </button>
+                                {(!selectedQuestion.status || selectedQuestion.status === "pending") && (
+                                    <div style={{ display: "flex", gap: "8px" }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleApprove(selectedQuestion)}
+                                            style={{
+                                                flex: 1,
+                                                padding: "8px",
+                                                backgroundColor: "#059669",
+                                                color: "#ffffff",
+                                                border: "none",
+                                                borderRadius: "6px",
+                                                fontSize: "12px",
+                                                fontWeight: "600",
+                                                cursor: "pointer"
+                                            }}
+                                        >
+                                            ✓ Approve
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleReject(selectedQuestion)}
+                                            style={{
+                                                flex: 1,
+                                                padding: "8px",
+                                                backgroundColor: "#d97706",
+                                                color: "#ffffff",
+                                                border: "none",
+                                                borderRadius: "6px",
+                                                fontSize: "12px",
+                                                fontWeight: "600",
+                                                cursor: "pointer"
+                                            }}
+                                        >
+                                            ✕ Reject
+                                        </button>
+                                    </div>
+                                )}
+
+                                {selectedQuestion.status === "approved" && (
                                     <button
                                         type="button"
                                         onClick={() => handleReject(selectedQuestion)}
                                         style={{
-                                            flex: 1,
+                                            width: "100%",
                                             padding: "8px",
-                                            backgroundColor: "#d97706",
-                                            color: "#ffffff",
-                                            border: "none",
+                                            backgroundColor: "#fffbeb",
+                                            color: "#b45309",
+                                            border: "1px solid #fde68a",
                                             borderRadius: "6px",
                                             fontSize: "12px",
                                             fontWeight: "600",
-                                            cursor: "pointer"
+                                            cursor: "pointer",
+                                            transition: "all 0.15s ease"
                                         }}
                                     >
-                                        ✕ Reject
+                                        ✕ Revoke / Reject
                                     </button>
-                                </div>
+                                )}
+
+                                {selectedQuestion.status === "rejected" && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleApprove(selectedQuestion)}
+                                        style={{
+                                            width: "100%",
+                                            padding: "8px",
+                                            backgroundColor: "#ecfdf5",
+                                            color: "#065f46",
+                                            border: "1px solid #a7f3d0",
+                                            borderRadius: "6px",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            cursor: "pointer",
+                                            transition: "all 0.15s ease"
+                                        }}
+                                    >
+                                        ✓ Restore & approve
+                                    </button>
+                                )}
 
                                 <div style={{ display: "flex", gap: "8px" }}>
                                     <button

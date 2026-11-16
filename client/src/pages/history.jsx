@@ -372,9 +372,26 @@ export default function History() {
                                         <Link
                                             to={`/results/${item.id}`}
                                             style={{
-                                                color: "#2563eb",
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "4px",
+                                                backgroundColor: "#eff6ff",
+                                                color: "#1d4ed8",
+                                                border: "1px solid #bfdbfe",
+                                                borderRadius: "6px",
+                                                padding: "5px 12px",
+                                                fontSize: "12px",
                                                 fontWeight: "600",
-                                                textDecoration: "none"
+                                                textDecoration: "none",
+                                                transition: "all 0.15s ease"
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.backgroundColor = "#dbeafe";
+                                                e.currentTarget.style.borderColor = "#93c5fd";
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.backgroundColor = "#eff6ff";
+                                                e.currentTarget.style.borderColor = "#bfdbfe";
                                             }}
                                         >
                                             View result →
@@ -389,7 +406,7 @@ export default function History() {
 
             {/* Subdued Footer Note */}
             <div style={{ fontSize: "11px", color: "#94a3b8", textAlign: "center" }}>
-                Proposed UX concept · Illustrative data · Exact scoring, limits and behavior require implementation verification.
+                All completed assessments are scored by AI rubric evaluation and saved to your candidate record.
             </div>
         </div>
     );

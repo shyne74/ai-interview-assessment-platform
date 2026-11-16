@@ -28,7 +28,11 @@ export default function AIGenerator() {
     const [customTopicInput, setCustomTopicInput] = useState("");
 
     // PDF Question Generation Configuration
-    const [pdfRole, setPdfRole] = useState("Backend Developer");
+    const [pdfRole, setPdfRole] = useState("");
+    const [pdfRoleSuggestion, setPdfRoleSuggestion] = useState(null);
+    const [newRoleTitle, setNewRoleTitle] = useState("");
+    const [newRoleDomains, setNewRoleDomains] = useState([]);
+    const [newRoleDomainInput, setNewRoleDomainInput] = useState("");
     const [pdfDifficulty, setPdfDifficulty] = useState("medium");
     const [pdfCount, setPdfCount] = useState(5);
     const [pdfFormat, setPdfFormat] = useState("theory");
@@ -38,6 +42,7 @@ export default function AIGenerator() {
     // JD Sub-panel State
     // ==========================================
     const [jdText, setJdText] = useState("");
+    const [jdRole, setJdRole] = useState("");
     const [jdCount, setJdCount] = useState(5);
     const [jdDifficulty, setJdDifficulty] = useState("medium");
     const [jdFormat, setJdFormat] = useState("mixed");
@@ -53,18 +58,103 @@ export default function AIGenerator() {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [approvingAll, setApprovingAll] = useState(false);
 
-    // Load available roles
-    useEffect(() => {
-        const loadRoles = async () => {
-            try {
-                const res = await api.get("/roles");
-                const roles = res.data.roles || [];
-                setRolesList(roles);
-                if (roles.length > 0) setPdfRole(roles[0].title);
-            } catch (err) {
-                console.error("Failed to load roles:", err);
+    // Matching helper: match document to roles taxonomy automatically
+    const matchDocumentToRoles = (detectedDomain, topics, summary, roles) => {
+        if (!roles || roles.length === 0) {
+            return { match: null, confidence: "none", suggestedNewRole: detectedDomain || "New Track", suggestedDomains: topics.slice(0, 4) };
+        }
+
+        const domainLower = (detectedDomain || "").toLowerCase().trim();
+        const topicsLower = (topics || []).map(t => (typeof t === "string" ? t : t.name || "").toLowerCase().trim());
+
+        let bestRole = null;
+        let bestDomain = null;
+        let bestScore = 0;
+
+        for (const r of roles) {
+            const titleLower = (r.title || "").toLowerCase().trim();
+            const aliasesLower = (r.aliases || []).map(a => (a || "").toLowerCase().trim());
+            const roleDomains = (r.domains || []).map(d => (d || "").trim());
+            const roleDomainsLower = roleDomains.map(d => d.toLowerCase());
+
+            let score = 0;
+
+            if (titleLower === domainLower) {
+                score += 100;
+            } else if (titleLower.includes(domainLower) || (domainLower && domainLower.includes(titleLower))) {
+                score += 50;
             }
+
+            for (const alias of aliasesLower) {
+                if (alias === domainLower) {
+                    score += 90;
+                } else if (alias && (domainLower.includes(alias) || alias.includes(domainLower))) {
+                    score += 45;
+                }
+            }
+
+            for (const t of topicsLower) {
+                if (t.includes(titleLower) || titleLower.includes(t)) {
+                    score += 15;
+                }
+                for (let i = 0; i < roleDomainsLower.length; i++) {
+                    const rd = roleDomainsLower[i];
+                    if (rd && (rd === t || t.includes(rd) || rd.includes(t))) {
+                        score += 25;
+                        if (!bestDomain) bestDomain = roleDomains[i];
+                    }
+                }
+            }
+
+            for (let i = 0; i < roleDomainsLower.length; i++) {
+                const rd = roleDomainsLower[i];
+                if (rd && (rd === domainLower || domainLower.includes(rd) || rd.includes(domainLower))) {
+                    score += 40;
+                    if (!bestDomain) bestDomain = roleDomains[i];
+                }
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestRole = r;
+                if (!bestDomain && roleDomains.length > 0) {
+                    bestDomain = roleDomains[0];
+                }
+            }
+        }
+
+        if (bestScore >= 35 && bestRole) {
+            return {
+                match: bestRole,
+                confidence: bestScore >= 70 ? "high" : "medium",
+                suggestedDomain: bestDomain || (topics[0] ? (typeof topics[0] === "string" ? topics[0] : topics[0].name) : "General")
+            };
+        }
+
+        const cleanTitle = detectedDomain && detectedDomain !== "Document Study" && detectedDomain !== "General"
+            ? detectedDomain
+            : (topics[0] ? (typeof topics[0] === "string" ? topics[0] : topics[0].name) : "New Role Track");
+
+        return {
+            match: null,
+            confidence: "none",
+            suggestedNewRole: cleanTitle,
+            suggestedDomains: topics.slice(0, 5).map(t => typeof t === "string" ? t : t.name)
         };
+    };
+
+    // Load available roles
+    const loadRoles = async () => {
+        try {
+            const res = await api.get("/roles");
+            const roles = res.data.roles || [];
+            setRolesList(roles);
+        } catch (err) {
+            console.error("Failed to load roles:", err);
+        }
+    };
+
+    useEffect(() => {
         loadRoles();
     }, []);
 
@@ -76,6 +166,17 @@ export default function AIGenerator() {
         setPdfFile(file);
         setPdfFileName(file.name);
         setErrorToast("");
+    };
+
+    const loadSamplePdf = async () => {
+        try {
+            const res = await fetch("/philosophy_sample.pdf");
+            const blob = await res.blob();
+            const file = new File([blob], "philosophy_sample.pdf", { type: "application/pdf" });
+            handlePdfFileSelect(file);
+        } catch (e) {
+            console.error("Failed to load sample PDF", e);
+        }
     };
 
     const handleAnalyzePdf = async () => {
@@ -115,6 +216,21 @@ export default function AIGenerator() {
             setExtractedTopics(topicNames);
             setSelectedTopics(topicNames);
             setPdfStage(2);
+
+            // Auto-match document against roles taxonomy
+            const matchResult = matchDocumentToRoles(data.detectedDomain, topicNames, data.summary, rolesList);
+            setPdfRoleSuggestion(matchResult);
+
+            if (matchResult.match) {
+                setPdfRole(matchResult.match.title);
+            } else {
+                const sTitle = matchResult.suggestedNewRole || data.detectedDomain || "New Role Track";
+                const sDomains = (topicNames.slice(0, 4) || ["General"]).map(t => typeof t === "string" ? t.slice(0, 40).replace(/,/g, "") : "General");
+                setNewRoleTitle(sTitle);
+                setNewRoleDomains(sDomains);
+                setPdfRole("__CREATE_NEW__");
+            }
+
             setActionToast(`Document analyzed: ${data.totalPages || 1} pages parsed, ${topicNames.length} topics extracted.`);
         } catch (err) {
             console.error("PDF analysis error:", err);
@@ -153,14 +269,61 @@ export default function AIGenerator() {
             return;
         }
 
-        setGeneratingPdfQuestions(true);
+        if (!pdfRole) {
+            setErrorToast("Please select or create a role track for this document.");
+            return;
+        }
+
+        let targetRole = pdfRole;
+
+        // If admin chose to create new role track
+        if (pdfRole === "__CREATE_NEW__") {
+            if (!newRoleTitle.trim()) {
+                setErrorToast("Please enter a title for the new role track.");
+                return;
+            }
+            setGeneratingPdfQuestions(true);
+            setPdfProgressText(`Creating new role track "${newRoleTitle.trim()}" in taxonomy...`);
+            try {
+                const cleanDomains = newRoleDomains.length > 0
+                    ? newRoleDomains.map(d => d.slice(0, 40).replace(/,/g, ""))
+                    : [selectedTopics[0] ? selectedTopics[0].slice(0, 40).replace(/,/g, "") : "General"];
+
+                await api.post("/roles", {
+                    title: newRoleTitle.trim(),
+                    domains: cleanDomains,
+                    aliases: [],
+                    status: "Active"
+                });
+
+                targetRole = newRoleTitle.trim();
+                setPdfRole(targetRole);
+
+                // Reload roles in background
+                loadRoles();
+            } catch (roleErr) {
+                console.error("Failed to create role:", roleErr);
+                setErrorToast(roleErr.response?.data?.message || "Failed to create new role track. Question generation stopped.");
+                setGeneratingPdfQuestions(false);
+                setPdfProgressText("");
+                return; // Stop: Do not generate under wrong role
+            }
+        } else {
+            setGeneratingPdfQuestions(true);
+        }
+
         setErrorToast("");
         setPdfProgressText("Synthesizing grounded questions from reference document...");
 
         try {
+            // Clean single domain from selected topic
+            let singleDomain = selectedTopics[0] || detectedDomain || "General";
+            if (singleDomain.includes(",")) singleDomain = singleDomain.split(",")[0].trim();
+            if (singleDomain.length > 40) singleDomain = singleDomain.slice(0, 40).trim();
+
             const payload = {
-                role: pdfRole,
-                domain: selectedTopics[0] || detectedDomain || "General",
+                role: targetRole,
+                domain: singleDomain,
                 selectedTopics: selectedTopics,
                 difficulty: pdfDifficulty.toLowerCase(),
                 num_questions: Number(pdfCount),
@@ -180,8 +343,8 @@ export default function AIGenerator() {
             const newReviewItems = qs.map(q => ({
                 _id: q._id,
                 questionText: q.questionText,
-                role: q.role || pdfRole,
-                domain: q.domain || selectedTopics[0],
+                role: q.role || targetRole,
+                domain: q.domain || singleDomain,
                 difficulty: q.difficulty || pdfDifficulty,
                 assessmentType: q.assessmentType || pdfFormat,
                 idealAnswer: q.idealAnswer,
@@ -190,7 +353,7 @@ export default function AIGenerator() {
             }));
 
             setReviewQueue([...newReviewItems, ...reviewQueue]);
-            setActionToast(`Generated ${qs.length} questions from document! Ready for review.`);
+            setActionToast(`Generated ${qs.length} questions for role "${targetRole}"! Ready for review.`);
         } catch (err) {
             console.error("PDF question generation error:", err);
             setErrorToast(err.response?.data?.message || err.message || "Failed to generate questions.");
@@ -233,6 +396,7 @@ export default function AIGenerator() {
                 difficulty: jdDifficulty.toLowerCase(),
                 assessmentType: jdFormat.toLowerCase()
             };
+            if (jdRole) payload.roleOverride = jdRole;
 
             const res = await api.post("/question/analyze-jd", payload);
             const data = res.data;
@@ -439,9 +603,18 @@ export default function AIGenerator() {
                     {pdfStage === 1 ? (
                         /* Step 1: Upload Document */
                         <div>
-                            <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
-                                Upload Study Material, Syllabus, or Reference Book
-                            </h2>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                                <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                                    Upload Study Material, Syllabus, or Reference Book
+                                </h2>
+                                <button
+                                    type="button"
+                                    onClick={loadSamplePdf}
+                                    style={{ background: "none", border: "none", color: "#2563eb", fontSize: "12px", fontWeight: "600", cursor: "pointer", textDecoration: "underline" }}
+                                >
+                                    Load sample Philosophy PDF
+                                </button>
+                            </div>
                             <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 20px 0" }}>
                                 Extracts genuine chapters, topics, and domain context using smart sampling and OCR fallback.
                             </p>
@@ -573,6 +746,51 @@ export default function AIGenerator() {
                                 </div>
                             </div>
 
+                            {/* Role Suggestion Card */}
+                            {pdfRoleSuggestion && (
+                                pdfRoleSuggestion.match ? (
+                                    <div style={{
+                                        padding: "12px 16px",
+                                        backgroundColor: "#f0fdf4",
+                                        border: "1px solid #bbf7d0",
+                                        borderRadius: "8px",
+                                        marginBottom: "16px",
+                                        fontSize: "13px",
+                                        color: "#166534",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "8px"
+                                    }}>
+                                        <span>✨</span>
+                                        <div>
+                                            These questions look like they belong in <strong>{pdfRoleSuggestion.match.title}</strong>
+                                            {pdfRoleSuggestion.suggestedDomain && <span> → <strong>{pdfRoleSuggestion.suggestedDomain}</strong></span>}
+                                            <span style={{ fontSize: "11px", fontWeight: "700", marginLeft: "6px", backgroundColor: "#dcfce7", padding: "1px 6px", borderRadius: "10px", color: "#15803d" }}>
+                                                CONFIDENCE: {pdfRoleSuggestion.confidence.toUpperCase()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        padding: "14px 16px",
+                                        backgroundColor: "#fffbeb",
+                                        border: "1px solid #fde68a",
+                                        borderRadius: "8px",
+                                        marginBottom: "16px",
+                                        fontSize: "13px",
+                                        color: "#92400e"
+                                    }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "700", marginBottom: "4px" }}>
+                                            <span>💡</span>
+                                            <span>No existing role fits this document</span>
+                                        </div>
+                                        <div style={{ fontSize: "12px", color: "#78350f" }}>
+                                            Suggested new role: <strong>{newRoleTitle || "New Role Track"}</strong>, domains: {newRoleDomains.join(", ") || "General"}
+                                        </div>
+                                    </div>
+                                )
+                            )}
+
                             {/* Question Generation Configuration */}
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", padding: "18px", backgroundColor: "#f9fafb", borderRadius: "10px", marginBottom: "20px" }}>
                                 <div>
@@ -583,10 +801,91 @@ export default function AIGenerator() {
                                         className="wf-input"
                                         style={{ backgroundColor: "#ffffff" }}
                                     >
-                                        {rolesList.map(r => (
-                                            <option key={r._id || r.title} value={r.title}>{r.title}</option>
-                                        ))}
+                                        <option value="" disabled>-- Select a role track --</option>
+                                        {newRoleTitle && (
+                                            <optgroup label="Suggested New Role">
+                                                <option value="__CREATE_NEW__">+ Create new role: {newRoleTitle}</option>
+                                            </optgroup>
+                                        )}
+                                        <optgroup label="Existing Roles">
+                                            {rolesList.map(r => (
+                                                <option key={r._id || r.title} value={r.title}>{r.title}</option>
+                                            ))}
+                                        </optgroup>
                                     </select>
+
+                                    {/* Editable New Role Creator */}
+                                    {pdfRole === "__CREATE_NEW__" && (
+                                        <div style={{ marginTop: "12px", padding: "14px", backgroundColor: "#ffffff", border: "1.5px dashed #cbd5e1", borderRadius: "8px" }}>
+                                            <div style={{ fontSize: "12px", fontWeight: "700", color: "#0f172a", marginBottom: "10px" }}>
+                                                Configure New Role Track
+                                            </div>
+                                            <div style={{ marginBottom: "10px" }}>
+                                                <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: "#475569", marginBottom: "4px" }}>
+                                                    Role Name
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={newRoleTitle}
+                                                    onChange={(e) => setNewRoleTitle(e.target.value)}
+                                                    className="wf-input"
+                                                    placeholder="e.g. Philosophy, Astronomy..."
+                                                    style={{ fontSize: "13px" }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: "#475569", marginBottom: "4px" }}>
+                                                    Curriculum Domains ({newRoleDomains.length})
+                                                </label>
+                                                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                                                    {newRoleDomains.map((dom, idx) => (
+                                                        <span key={idx} style={{ backgroundColor: "#e0f2fe", color: "#0369a1", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                                            {dom}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setNewRoleDomains(newRoleDomains.filter((_, i) => i !== idx))}
+                                                                style={{ background: "none", border: "none", color: "#0284c7", cursor: "pointer", padding: 0 }}
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                                <div style={{ display: "flex", gap: "6px" }}>
+                                                    <input
+                                                        type="text"
+                                                        value={newRoleDomainInput}
+                                                        onChange={(e) => setNewRoleDomainInput(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                if (newRoleDomainInput.trim() && !newRoleDomains.includes(newRoleDomainInput.trim())) {
+                                                                    setNewRoleDomains([...newRoleDomains, newRoleDomainInput.trim()]);
+                                                                    setNewRoleDomainInput("");
+                                                                }
+                                                            }
+                                                        }}
+                                                        placeholder="Add domain..."
+                                                        className="wf-input"
+                                                        style={{ flex: 1, fontSize: "12px" }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (newRoleDomainInput.trim() && !newRoleDomains.includes(newRoleDomainInput.trim())) {
+                                                                setNewRoleDomains([...newRoleDomains, newRoleDomainInput.trim()]);
+                                                                setNewRoleDomainInput("");
+                                                            }
+                                                        }}
+                                                        className="wf-btn-outline"
+                                                        style={{ fontSize: "12px", padding: "4px 10px" }}
+                                                    >
+                                                        Add
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div>
@@ -687,6 +986,20 @@ export default function AIGenerator() {
 
                     {/* Configuration Row */}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", padding: "16px", backgroundColor: "#f9fafb", borderRadius: "8px", marginBottom: "16px" }}>
+                        <div>
+                            <label className="wf-form-label">Role Track Destination</label>
+                            <select
+                                value={jdRole}
+                                onChange={(e) => setJdRole(e.target.value)}
+                                className="wf-input"
+                                style={{ backgroundColor: "#ffffff" }}
+                            >
+                                <option value="">Auto-detect from JD</option>
+                                {rolesList.map(r => (
+                                    <option key={r._id || r.title} value={r.title}>{r.title}</option>
+                                ))}
+                            </select>
+                        </div>
                         <div>
                             <label className="wf-form-label">Question Count</label>
                             <select

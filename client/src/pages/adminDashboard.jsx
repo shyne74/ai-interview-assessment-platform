@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { Mail } from "lucide-react";
 import api from "../utils/api";
+import AssignTestModal from "../components/AssignTestModal";
 
 export default function AdminDashboard() {
     const navigate = useNavigate();
@@ -32,6 +34,8 @@ export default function AdminDashboard() {
     // Integrity Alerts State (from GET /api/results/admin)
     const [integrityAlerts, setIntegrityAlerts] = useState([]);
     const [loadingAlerts, setLoadingAlerts] = useState(true);
+    const [showAllDomains, setShowAllDomains] = useState(false);
+    const [assignModalOpen, setAssignModalOpen] = useState(false);
 
     const loadDashboardData = async () => {
         // 1. Fetch Analytics
@@ -157,14 +161,24 @@ export default function AdminDashboard() {
                         Live platform health, candidate throughput, questions awaiting validation, and integrity monitoring.
                     </p>
                 </div>
-                <button
-                    type="button"
-                    onClick={loadDashboardData}
-                    className="wf-btn-outline"
-                    style={{ fontSize: "12px", padding: "8px 14px" }}
-                >
-                    🔄 Refresh Data
-                </button>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                    <button
+                        type="button"
+                        onClick={() => setAssignModalOpen(true)}
+                        className="wf-btn-primary"
+                        style={{ fontSize: "12px", padding: "8px 14px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                        <Mail size={14} /> Assign Test & Send Invite
+                    </button>
+                    <button
+                        type="button"
+                        onClick={loadDashboardData}
+                        className="wf-btn-outline"
+                        style={{ fontSize: "12px", padding: "8px 14px" }}
+                    >
+                        🔄 Refresh Data
+                    </button>
+                </div>
             </div>
 
             {errorAnalytics && (
@@ -477,32 +491,82 @@ export default function AdminDashboard() {
 
                 {/* Domain Performance Averages */}
                 <div className="wf-card">
-                    <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 16px 0" }}>
-                        Domain performance averages
-                    </h2>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                        <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                            Domain performance averages
+                        </h2>
+                    </div>
 
                     {loadingAnalytics ? (
                         <div style={{ padding: "24px 0", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
                             Calculating domain averages...
                         </div>
-                    ) : Object.keys(analytics.domainAverages).length === 0 ? (
-                        <div style={{ padding: "24px 0", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
-                            No domain evaluation metrics recorded yet.
-                        </div>
-                    ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                            {Object.entries(analytics.domainAverages).map(([dom, avgScore]) => (
-                                <div key={dom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "10px", borderBottom: "1px solid #f3f4f6" }}>
-                                    <span style={{ fontSize: "13px", fontWeight: "600", color: "#374151" }}>{dom}</span>
-                                    <span style={{ fontSize: "13px", fontWeight: "700", color: avgScore >= 7.0 ? "#059669" : "#d97706" }}>
-                                        {avgScore} / 10
-                                    </span>
+                    ) : (() => {
+                        // Defensive filtering: ignore keys > 40 chars, containing commas, or generic placeholders
+                        const validDomainEntries = Object.entries(analytics.domainAverages || {}).filter(([dom]) => {
+                            if (!dom || typeof dom !== "string") return false;
+                            const trimmed = dom.trim();
+                            if (trimmed.length > 40 || trimmed.includes(",")) return false;
+                            const lower = trimmed.toLowerCase();
+                            if (lower === "technical assessment" || lower === "general" || lower === "support engineering" || lower === "missing antimatter problem") return false;
+                            return true;
+                        });
+
+                        if (validDomainEntries.length === 0) {
+                            return (
+                                <div style={{ padding: "24px 0", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                                    No domain data yet
                                 </div>
-                            ))}
-                        </div>
-                    )}
+                            );
+                        }
+
+                        const displayedEntries = showAllDomains ? validDomainEntries : validDomainEntries.slice(0, 8);
+
+                        return (
+                            <div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                    {displayedEntries.map(([dom, avgScore]) => (
+                                        <div key={dom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "10px", borderBottom: "1px solid #f3f4f6" }}>
+                                            <span style={{ fontSize: "13px", fontWeight: "600", color: "#374151" }}>{dom}</span>
+                                            <span style={{ fontSize: "13px", fontWeight: "700", color: avgScore >= 7.0 ? "#059669" : "#d97706" }}>
+                                                {avgScore} / 10
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {validDomainEntries.length > 8 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAllDomains(!showAllDomains)}
+                                        style={{
+                                            marginTop: "14px",
+                                            background: "none",
+                                            border: "none",
+                                            color: "#2563eb",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            cursor: "pointer",
+                                            padding: 0,
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "4px"
+                                        }}
+                                    >
+                                        {showAllDomains ? "Show top 8" : `View all (${validDomainEntries.length}) →`}
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
             </div>
+
+            {/* Modal: Assign Test & Send Invite */}
+            <AssignTestModal
+                isOpen={assignModalOpen}
+                onClose={() => setAssignModalOpen(false)}
+                onAssigned={loadDashboardData}
+            />
         </div>
     );
 }

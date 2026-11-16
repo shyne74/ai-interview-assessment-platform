@@ -18,6 +18,8 @@ import Results from "./pages/result";
 import Analytics from "./pages/analytics";
 import History from "./pages/history";
 import Profile from "./pages/profile";
+import DsaTopicPage from "./pages/DsaTopicPage";
+import ProblemWorkspace from "./pages/ProblemWorkspace";
 
 import AdminDashboard from "./pages/adminDashboard";
 import QuestionBank from "./pages/questionbank";
@@ -28,19 +30,33 @@ import AdminRegisterCandidates from "./pages/AdminRegisterCandidates";
 import CodeforcesImporter from "./pages/CodeforcesImporter";
 import AdminResults from "./pages/adminResults";
 import AdminAnalytics from "./pages/adminAnalytics";
+import AdminBatchesList from "./pages/AdminBatchesList";
+import AdminBatchWizard from "./pages/AdminBatchWizard";
+import AdminBatchTracking from "./pages/AdminBatchTracking";
+import ChangePassword from "./pages/ChangePassword";
+import ExamInvite from "./pages/ExamInvite";
 
 import ProtectedRoute from "./components/protected_routes";
 import AdminRoute from "./components/AdminRoute";
 import AppLayout from "./components/AppLayout";
+import { ToastProvider } from "./components/ui/ToastContext";
+
+function HomeRedirect() {
+    const role = localStorage.getItem("role");
+    return <Navigate to={role === "admin" ? "/admin-dashboard" : "/dashboard"} replace />;
+}
 
 function App() {
     return (
         <ThemeProvider>
-            <BrowserRouter>
+            <ToastProvider>
+                <BrowserRouter>
                 <Routes>
                     {/* Public Auth Routes */}
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
+                    <Route path="/change-password" element={<ChangePassword />} />
+                    <Route path="/exam-invite/:interviewId" element={<ExamInvite />} />
 
                     {/* Protected Routes wrapped in AppLayout */}
                     <Route element={<ProtectedRoute />}>
@@ -51,6 +67,8 @@ function App() {
                             <Route path="/practice/mock-setup" element={<MockInterviewSetup />} />
                             <Route path="/practice/coding-setup" element={<CodingAssessmentSetup />} />
                             <Route path="/practice/one-skill" element={<OneSkillSetup />} />
+                            <Route path="/practice/topics/:slug" element={<DsaTopicPage />} />
+                            <Route path="/practice/problems/:id" element={<ProblemWorkspace />} />
                             <Route path="/adaptive-exam" element={<AdaptiveExamHub />} />
                             <Route path="/adaptive" element={<AdaptiveExamHub />} />
                             <Route path="/prepare" element={<PrepareWithAI />} />
@@ -78,15 +96,19 @@ function App() {
                                 <Route path="/codeforces" element={<CodeforcesImporter />} />
                                 <Route path="/admin-results" element={<AdminResults />} />
                                 <Route path="/admin-analytics" element={<AdminAnalytics />} />
+                                <Route path="/admin/batches" element={<AdminBatchesList />} />
+                                <Route path="/admin/batches/new" element={<AdminBatchWizard />} />
+                                <Route path="/admin/batches/:id" element={<AdminBatchTracking />} />
                             </Route>
                         </Route>
                     </Route>
 
                     {/* Default Fallback Redirect */}
-                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="/" element={<HomeRedirect />} />
+                    <Route path="*" element={<HomeRedirect />} />
                 </Routes>
             </BrowserRouter>
+            </ToastProvider>
         </ThemeProvider>
     );
 }
