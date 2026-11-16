@@ -410,16 +410,14 @@ async def evaluate_answer_oftest(req: evaluateanswer):
         return call_groq_json(messages, temperature=0.2, max_tokens=500)
     except Exception as e:
         print("evaluate_answer fallback error:", e)
-        # Fallback scoring if Groq is temporarily overloaded
-        ans_len = len(cleaned_ans)
-        est_score = min(9.0, max(2.0, round(ans_len / 40.0, 1)))
+        # Never invent fake positive scores on evaluation error
         return {
-            "technicalKnowledgeScore": int(est_score),
-            "completenessScore": int(est_score),
-            "relevanceScore": int(est_score),
-            "clarityScore": int(est_score),
-            "overallScore": est_score,
-            "feedback": "Candidate answer received and processed."
+            "technicalKnowledgeScore": 0,
+            "completenessScore": 0,
+            "relevanceScore": 0,
+            "clarityScore": 0,
+            "overallScore": 0.0,
+            "feedback": "Automated AI evaluation temporarily timed out. Your answer has been saved."
         }
 
 
@@ -572,15 +570,22 @@ CANDIDATE CODE:
 JUDGE / EXECUTION CONTEXT:
 {execution_result}
 
-Evaluate:
-1. Approach
-2. Time complexity
-3. Space complexity
-4. Code quality
-5. Constructive feedback
+CRITICAL SCORING RULES:
+1. If the candidate code is merely starter boilerplate, an empty template, or only contains comments/pass/stubs without actual problem logic, overallScore MUST be 0.0 and all sub-scores MUST be 0.
+2. Otherwise, evaluate logic correctness against problem requirements, test results, approach, efficiency, and cleanliness:
+   - technicalKnowledgeScore: 0 to 10 integer
+   - completenessScore: 0 to 10 integer
+   - relevanceScore: 0 to 10 integer
+   - clarityScore: 0 to 10 integer
+   - overallScore: 0.0 to 10.0 float (average of the 4 sub-scores)
 
-Return JSON:
+Return ONLY valid JSON:
 {{
+    "technicalKnowledgeScore": 0,
+    "completenessScore": 0,
+    "relevanceScore": 0,
+    "clarityScore": 0,
+    "overallScore": 0.0,
     "approach": "...",
     "timeComplexity": "...",
     "spaceComplexity": "...",
@@ -592,8 +597,24 @@ Return JSON:
         {"role": "system", "content": "You are a code assessment engine. Output ONLY valid JSON."},
         {"role": "user", "content": prompt}
     ]
-    data = call_groq_json(messages, temperature=0.1, max_tokens=600)
-    return {"evaluation": json.dumps(data) if isinstance(data, dict) else str(data)}
+    try:
+        data = call_groq_json(messages, temperature=0.1, max_tokens=600)
+        return {"evaluation": json.dumps(data) if isinstance(data, dict) else str(data)}
+    except Exception as e:
+        print("evaluate-code error:", e)
+        fallback = {
+            "technicalKnowledgeScore": 0,
+            "completenessScore": 0,
+            "relevanceScore": 0,
+            "clarityScore": 0,
+            "overallScore": 0.0,
+            "approach": "Evaluation service unavailable.",
+            "timeComplexity": "N/A",
+            "spaceComplexity": "N/A",
+            "codeQuality": "N/A",
+            "feedback": "Automated code evaluation timed out. Submission recorded."
+        }
+        return {"evaluation": json.dumps(fallback)}
 
 
 class EvaluateAdaptiveRequest(BaseModel):

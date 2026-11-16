@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
+import { Clock, Loader2, CheckCircle2, AlertTriangle, RotateCcw } from "lucide-react";
 
 const SUPPORTED_LANGUAGES = [
     { id: "javascript", label: "JavaScript (Node.js)", judgeId: 63 },
@@ -82,6 +83,50 @@ public class Main {
 `
 };
 
+function normalizeCode(code) {
+    if (!code || typeof code !== "string") return "";
+    return code
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .trim();
+}
+
+function stripCommentsAndWhitespace(code = "") {
+    if (!code || typeof code !== "string") return "";
+    return code
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*/g, "")
+        .replace(/#.*/g, "")
+        .replace(/\s+/g, "")
+        .trim();
+}
+
+function isStarterBoilerplate(code, language = "javascript") {
+    const normalized = normalizeCode(code);
+    if (!normalized) return true;
+    const langKey = (language || "javascript").toLowerCase();
+    const template = LANGUAGE_BOILERPLATES[langKey];
+    if (template && normalizeCode(template) === normalized) {
+        return true;
+    }
+    const strippedCandidate = stripCommentsAndWhitespace(code);
+    if (template && strippedCandidate === stripCommentsAndWhitespace(template)) {
+        return true;
+    }
+    for (const key of Object.keys(LANGUAGE_BOILERPLATES)) {
+        if (normalizeCode(LANGUAGE_BOILERPLATES[key]) === normalized) {
+            return true;
+        }
+        if (strippedCandidate === stripCommentsAndWhitespace(LANGUAGE_BOILERPLATES[key])) {
+            return true;
+        }
+    }
+    if (langKey === "python" && (strippedCandidate === "importsysdefsolve():passif__name__=='__main__':solve()" || strippedCandidate === "defsolve():pass")) {
+        return true;
+    }
+    return false;
+}
+
 export default function Interview() {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -136,24 +181,36 @@ export default function Interview() {
                 const qList = (data.questions && data.questions.length > 0) ? data.questions : (data.interview?.responses || []);
                 setQuestions(qList);
 
-                // Populate any existing answers with starter code for every supported language
+                // Populate initial answers cleanly: only coding questions receive starter boilerplate
                 const initialAnswers = {};
                 (data.interview?.responses || []).forEach((resp, idx) => {
+                    const qItem = qList[idx];
+                    const isQCoding = resp.questionType === "coding" || qItem?.assessmentType === "coding" || qItem?.type === "coding" || Boolean(qItem?.codingData?.samples?.length);
                     const lang = resp.language || "javascript";
-                    const codeByLang = {};
-                    SUPPORTED_LANGUAGES.forEach(l => {
-                        codeByLang[l.id] = LANGUAGE_BOILERPLATES[l.id];
-                    });
-                    if (resp.code) {
-                        codeByLang[lang] = resp.code;
-                    }
 
-                    initialAnswers[idx] = {
-                        text: resp.userAnswer || "",
-                        code: resp.code || (LANGUAGE_BOILERPLATES[lang] || ""),
-                        language: lang,
-                        codeByLanguage: codeByLang
-                    };
+                    if (isQCoding) {
+                        const codeByLang = {};
+                        SUPPORTED_LANGUAGES.forEach(l => {
+                            codeByLang[l.id] = LANGUAGE_BOILERPLATES[l.id];
+                        });
+                        if (resp.code) {
+                            codeByLang[lang] = resp.code;
+                        }
+
+                        initialAnswers[idx] = {
+                            text: resp.userAnswer || "",
+                            code: resp.code || (LANGUAGE_BOILERPLATES[lang] || ""),
+                            language: lang,
+                            codeByLanguage: codeByLang
+                        };
+                    } else {
+                        initialAnswers[idx] = {
+                            text: resp.userAnswer || "",
+                            code: "",
+                            language: "javascript",
+                            codeByLanguage: {}
+                        };
+                    }
                 });
                 setAnswers(initialAnswers);
 
@@ -311,19 +368,25 @@ export default function Interview() {
     };
 
     const currentQ = questions[currentIndex] || {};
-    const isCoding = currentQ.assessmentType === "coding" || currentQ.type === "coding";
+    const isCoding = currentQ.assessmentType === "coding" || currentQ.type === "coding" || Boolean(currentQ?.codingData?.samples?.length);
 
     const currentAns = answers[currentIndex] || {
         text: "",
-        code: LANGUAGE_BOILERPLATES[selectedLanguage] || "",
+        code: isCoding ? (LANGUAGE_BOILERPLATES[selectedLanguage] || "") : "",
         language: selectedLanguage,
         codeByLanguage: {}
     };
-    const wordCount = currentAns.text.trim() ? currentAns.text.trim().split(/\\s+/).length : 0;
+    const wordCount = currentAns.text.trim() ? currentAns.text.trim().split(/\s+/).length : 0;
 
-    const answeredCount = Object.values(answers).filter(
-        (a) => (a.text && a.text.trim().length > 0) || (a.code && a.code.trim().length > 0)
-    ).length;
+    const answeredCount = questions.filter((q, idx) => {
+        const a = answers[idx];
+        if (!a) return false;
+        const qIsCoding = q.assessmentType === "coding" || q.type === "coding" || Boolean(q?.codingData?.samples?.length);
+        if (qIsCoding) {
+            return Boolean(a.code && a.code.trim() && !isStarterBoilerplate(a.code, a.language || selectedLanguage));
+        }
+        return Boolean(a.text && a.text.trim().length > 0);
+    }).length;
 
     const handleTextChange = (e) => {
         setAnswers({
@@ -485,34 +548,80 @@ export default function Interview() {
         setSubmitting(true);
         setError("");
 
+        // 1. Immediately halt heartbeats and timers to prevent conflicting requests
+        if (heartbeatRef.current) {
+            clearInterval(heartbeatRef.current);
+            heartbeatRef.current = null;
+        }
+
         try {
             // Build evaluated responses array
             const payload = questions.map((q, idx) => {
                 const ans = answers[idx] || {};
+                const qIsCoding = q.assessmentType === "coding" || q.type === "coding" || Boolean(q?.codingData?.samples?.length);
+                const rawCode = (ans.code || "").trim();
+                const isUntouched = qIsCoding && isStarterBoilerplate(rawCode, ans.language || selectedLanguage);
+
                 return {
                     questionId: q._id,
                     userAnswer: ans.text || "",
-                    code: ans.code || "",
-                    language: ans.language || "javascript"
+                    code: isUntouched ? "" : rawCode,
+                    language: ans.language || selectedLanguage,
+                    unchanged: isUntouched
                 };
             });
 
-            // 1. Submit answers to Express backend
-            await api.post(`/interviews/${id}/submit`, {
-                answers: payload,
-                reason: auto ? "auto-submitted: time expired" : "Candidate submitted assessment"
-            });
-
-            // 2. Trigger automated AI deep analysis (skill breakdown, strengths, weak areas)
+            // Back up payload to localStorage for resiliency
             try {
-                await api.post(`/results/${id}/analyze`);
+                localStorage.setItem(`exam_backup_${id}`, JSON.stringify(payload));
+            } catch (e) {}
+
+            // 2. Submit answers to Express backend with 120s timeout
+            let submitSucceeded = false;
+            try {
+                await api.post(`/interviews/${id}/submit`, {
+                    answers: payload,
+                    reason: auto ? "auto-submitted: time expired" : "Candidate submitted assessment"
+                }, { timeout: 120000 });
+                submitSucceeded = true;
+            } catch (postErr) {
+                console.warn("Direct submit timed out or errored, falling back to status polling:", postErr);
+            }
+
+            // Polling fallback: if direct request didn't return, poll every 3s up to 60s
+            if (!submitSucceeded) {
+                const startTime = Date.now();
+                while (Date.now() - startTime < 60000) {
+                    await new Promise(r => setTimeout(r, 3000));
+                    try {
+                        const checkRes = await api.get(`/interviews/${id}`);
+                        const status = checkRes.data?.interview?.status || checkRes.data?.status;
+                        if (status === "evaluated" || status === "completed") {
+                            submitSucceeded = true;
+                            break;
+                        }
+                    } catch (pollErr) {
+                        // Keep polling
+                    }
+                }
+            }
+
+            if (!submitSucceeded) {
+                setError("Your assessment answers were saved and are processing. Please visit your dashboard shortly to view your completed report.");
+                setSubmitting(false);
+                return;
+            }
+
+            // 3. Trigger optional automated AI deep analysis in background
+            try {
+                await api.post(`/results/${id}/analyze`, {}, { timeout: 15000 });
             } catch (analyzeErr) {
                 console.warn("Analysis trigger notice:", analyzeErr.message);
             }
 
             localStorage.removeItem("activeInterviewId");
 
-            // 3. Navigate to submission confirmation screen with history replacement to prevent back loops
+            // 4. Navigate to submission confirmation screen
             navigate(`/exam-submitted/${id}`, { replace: true });
         } catch (err) {
             console.error("Submission failed:", err);
@@ -593,18 +702,29 @@ export default function Interview() {
                 </div>
 
                 <div style={{ fontSize: "13px", fontWeight: "600", color: "#334155" }}>
-                    {interviewData?.roleTitle || "Technical Screen"} · {interviewData?.assessmentType === "coding" ? "Coding Assessment" : "Standard Interview"}
+                    {interviewData?.roleTitle || "Technical Screen"} · {
+                        interviewData?.interviewType === "one-skill"
+                            ? "One-skill practice"
+                            : (interviewData?.interviewType === "coding" || interviewData?.assessmentType === "coding")
+                            ? "Coding assessment"
+                            : interviewData?.interviewType === "pdf-prep"
+                            ? "PDF prep"
+                            : interviewData?.interviewType === "jd"
+                            ? "JD practice"
+                            : "Mock interview"
+                    }
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "13px" }}>
                     <span style={{
-                        color: secondsLeft < 300 ? "#ef4444" : "#111827",
-                        fontWeight: "700",
+                        color: secondsLeft < 300 ? "#dc2626" : "#334155",
+                        fontWeight: "600",
                         display: "flex",
                         alignItems: "center",
-                        gap: "4px"
+                        gap: "6px"
                     }}>
-                        <span>⏱</span> {formatTimer(secondsLeft)} remaining
+                        <Clock size={15} strokeWidth={1.8} style={{ color: secondsLeft < 300 ? "#dc2626" : "#64748b" }} />
+                        <span>{formatTimer(secondsLeft)} remaining</span>
                     </span>
                     <button
                         type="button"
@@ -656,31 +776,72 @@ export default function Interview() {
                     alignItems: "center",
                     gap: "8px"
                 }}>
-                    <span>⚠️</span>
+                    <AlertTriangle size={16} style={{ color: "#dc2626" }} />
                     <span>Direct pasting is disabled to protect assessment integrity. Please type your response.</span>
                 </div>
             )}
 
-            {/* Submitting Fullscreen Overlay */}
+            {/* Dedicated Submitting & Evaluating Screen */}
             {submitting && (
                 <div style={{
                     position: "fixed",
                     inset: 0,
-                    backgroundColor: "rgba(15, 23, 42, 0.8)",
+                    backgroundColor: "#ffffff",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    zIndex: 100,
-                    color: "#ffffff"
+                    zIndex: 9999,
+                    padding: "24px"
                 }}>
-                    <div style={{ textAlign: "center", maxWidth: "420px", padding: "32px" }}>
-                        <div style={{ fontSize: "40px", marginBottom: "16px" }}>⚡</div>
-                        <h2 style={{ fontSize: "20px", fontWeight: "700", marginBottom: "8px" }}>
-                            Evaluating your assessment with AI...
+                    <div style={{
+                        maxWidth: "460px",
+                        width: "100%",
+                        textAlign: "center",
+                        padding: "40px 32px",
+                        borderRadius: "16px",
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05)",
+                        backgroundColor: "#ffffff"
+                    }}>
+                        <div style={{
+                            width: "56px",
+                            height: "56px",
+                            borderRadius: "50%",
+                            backgroundColor: "#f0fdf4",
+                            border: "1px solid #bbf7d0",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            margin: "0 auto 20px auto"
+                        }}>
+                            <Loader2 size={26} className="animate-spin" style={{ color: "#16a34a" }} />
+                        </div>
+
+                        <h2 style={{ fontSize: "20px", fontWeight: "600", color: "#0f172a", margin: "0 0 8px 0" }}>
+                            Evaluating your assessment
                         </h2>
-                        <p style={{ fontSize: "14px", color: "#cbd5e1", lineHeight: 1.5 }}>
-                            Analyzing technical knowledge, completeness, algorithmic efficiency, and clarity. Generating detailed feedback report.
+                        <p style={{ fontSize: "14px", color: "#64748b", margin: "0 0 28px 0", lineHeight: 1.5 }}>
+                            Our evaluation engine is analyzing your responses against calibrated criteria.
                         </p>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px", textAlign: "left" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 14px", borderRadius: "8px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                                <CheckCircle2 size={18} style={{ color: "#16a34a", flexShrink: 0 }} />
+                                <span style={{ fontSize: "13px", fontWeight: "500", color: "#0f172a" }}>Answers securely saved</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 14px", borderRadius: "8px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                                <CheckCircle2 size={18} style={{ color: "#16a34a", flexShrink: 0 }} />
+                                <span style={{ fontSize: "13px", fontWeight: "500", color: "#0f172a" }}>Integrity verification complete</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 14px", borderRadius: "8px", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                                <Loader2 size={18} className="animate-spin" style={{ color: "#16a34a", flexShrink: 0 }} />
+                                <span style={{ fontSize: "13px", fontWeight: "600", color: "#16a34a" }}>Evaluating technical responses...</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 14px", borderRadius: "8px", backgroundColor: "#f8fafc", border: "1px solid #f1f5f9", opacity: 0.7 }}>
+                                <div style={{ width: "18px", height: "18px", borderRadius: "50%", border: "2px solid #cbd5e1", flexShrink: 0 }} />
+                                <span style={{ fontSize: "13px", fontWeight: "400", color: "#64748b" }}>Generating comprehensive score report</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

@@ -254,7 +254,13 @@ function canonicalRole(r) {
 function canonicalDomain(rawDomain, questionText = "", role = "") {
     const effectiveRole = canonicalRole(role);
     if (!ROLE_DOMAINS[effectiveRole]) {
-        return (rawDomain && typeof rawDomain === "string" && rawDomain.trim()) ? rawDomain.trim() : (effectiveRole || "General");
+        if (rawDomain && typeof rawDomain === "string" && rawDomain.trim()) {
+            let single = rawDomain.trim();
+            if (single.includes(",")) single = single.split(",")[0].trim();
+            if (single.length > 40) single = single.slice(0, 40).trim();
+            return single || effectiveRole || "General";
+        }
+        return effectiveRole || "General";
     }
     const validDomains = ROLE_DOMAINS[effectiveRole];
 

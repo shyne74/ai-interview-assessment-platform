@@ -1,4 +1,5 @@
 const Question = require("../models/question_schema");
+const Role = require("../models/role_schema");
 const cheerio = require("cheerio");
 const axios = require("axios");
 const FormData = require("form-data");
@@ -68,17 +69,55 @@ exports.createquestion = async function(req, res) {
     }
 }
 
+function escapeRegex(text) {
+    return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+}
+
 exports.getAllQuestion = async function(req, res) {
     try {
         const { domain, role, status, difficulty, search } = req.query;
         let query = {};
 
-        if (role && role !== "All" && role !== "all") query.role = role;
         if (status && status !== "All" && status !== "all") query.status = status;
         if (domain && domain !== "All" && domain !== "all") query.domain = domain;
         if (difficulty && difficulty !== "All" && difficulty !== "all") query.difficulty = difficulty.toLowerCase();
         if (search && search.trim()) {
             query.questionText = { $regex: search.trim(), $options: "i" };
+        }
+
+        if (role && role !== "All" && role !== "all") {
+            const roleStr = role.trim();
+            if (roleStr.toLowerCase() === "other" || roleStr.toLowerCase() === "uncategorized") {
+                // Find questions whose role does NOT match any taxonomy role or alias
+                const allRoles = await Role.find({});
+                const taxonomyTerms = [];
+                allRoles.forEach(r => {
+                    if (r.title && r.title.trim()) taxonomyTerms.push(r.title.trim());
+                    if (Array.isArray(r.aliases)) {
+                        r.aliases.forEach(a => {
+                            if (a && typeof a === "string" && a.trim()) taxonomyTerms.push(a.trim());
+                        });
+                    }
+                });
+                const termRegexes = taxonomyTerms.map(t => new RegExp(`^${escapeRegex(t)}$`, "i"));
+                query.role = { $nin: termRegexes };
+            } else {
+                // Find if role matches a taxonomy entry (by title or alias)
+                const matchedRole = await Role.findOne({
+                    $or: [
+                        { title: { $regex: new RegExp(`^${escapeRegex(roleStr)}$`, "i") } },
+                        { aliases: { $regex: new RegExp(`^${escapeRegex(roleStr)}$`, "i") } }
+                    ]
+                });
+
+                if (matchedRole) {
+                    const searchTerms = [matchedRole.title, ...(matchedRole.aliases || [])].filter(Boolean);
+                    const regexes = searchTerms.map(t => new RegExp(`^${escapeRegex(t.trim())}$`, "i"));
+                    query.$or = regexes.map(r => ({ role: { $regex: r } }));
+                } else {
+                    query.role = { $regex: new RegExp(`^${escapeRegex(roleStr)}$`, "i") };
+                }
+            }
         }
 
         const total = await Question.countDocuments(query);

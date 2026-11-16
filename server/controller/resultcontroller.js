@@ -187,21 +187,68 @@ exports.getAnalytics = async function(req, res) {
         const passedCount = results.filter(r => (r.overallScore || 0) >= 7.0).length;
         const passRate = totalResults ? Number(((passedCount / totalResults) * 100).toFixed(1)) : 0;
 
-        // Calculate domain averages
+        // Calculate clean domain averages (only taxonomy domains or approved question bank domains)
+        const allRoles = await Role.find({});
+        const validDomainsSet = new Set();
+        allRoles.forEach(r => {
+            if (Array.isArray(r.domains)) {
+                r.domains.forEach(d => {
+                    if (d && typeof d === "string") {
+                        const trimmed = d.trim();
+                        if (trimmed && trimmed.length <= 40 && !trimmed.includes(",")) {
+                            validDomainsSet.add(trimmed);
+                        }
+                    }
+                });
+            }
+        });
+
+        const approvedQuestionDomains = await Question.find({ status: "approved" }).distinct("domain");
+        const excludedDomains = new Set([
+            "technical assessment",
+            "general",
+            "support engineering",
+            "missing antimatter problem",
+            "patient admission and demographics"
+        ]);
+
+        approvedQuestionDomains.forEach(d => {
+            if (d && typeof d === "string") {
+                const trimmed = d.trim();
+                if (trimmed && trimmed.length <= 40 && !trimmed.includes(",") && !excludedDomains.has(trimmed.toLowerCase())) {
+                    validDomainsSet.add(trimmed);
+                }
+            }
+        });
+
+        const canonicalDomainMap = new Map();
+        validDomainsSet.forEach(d => {
+            canonicalDomainMap.set(d.toLowerCase(), d);
+        });
+
         const domainSums = {};
         const domainCounts = {};
         results.forEach(r => {
-            const d = r.domain || r.roleTitle || "General";
-            domainSums[d] = (domainSums[d] || 0) + (r.overallScore || 0);
-            domainCounts[d] = (domainCounts[d] || 0) + 1;
+            const rawDomain = (r.domain || "").trim();
+            if (!rawDomain || rawDomain.length > 40 || rawDomain.includes(",") || excludedDomains.has(rawDomain.toLowerCase())) {
+                return;
+            }
+            const canonical = canonicalDomainMap.get(rawDomain.toLowerCase());
+            if (canonical) {
+                domainSums[canonical] = (domainSums[canonical] || 0) + (r.overallScore || 0);
+                domainCounts[canonical] = (domainCounts[canonical] || 0) + 1;
+            }
         });
+
+        const sortedDomainKeys = Object.keys(domainCounts).sort((a, b) => domainCounts[b] - domainCounts[a]);
         const domainAverages = {};
-        Object.keys(domainCounts).forEach(d => {
+        const domainAttemptCounts = {};
+        sortedDomainKeys.forEach(d => {
             domainAverages[d] = Number((domainSums[d] / domainCounts[d]).toFixed(1));
+            domainAttemptCounts[d] = domainCounts[d];
         });
 
         // Find roles with low approved question inventory (< 5)
-        const allRoles = await Role.find({});
         const lowInventoryRoles = [];
         for (const role of allRoles) {
             const count = await Question.countDocuments({
@@ -222,6 +269,7 @@ exports.getAnalytics = async function(req, res) {
             passRate,
             weeklyVolume,
             domainAverages,
+            domainCounts: domainAttemptCounts,
             scoreDistribution,
             lowInventoryRoles
         });

@@ -21,12 +21,21 @@ export default function ProctoringRules() {
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [proctoringConsent, setProctoringConsent] = useState(false);
 
     const handleStartExam = async () => {
+        if (!proctoringConsent) {
+            setError("Please review and accept the proctoring agreement to continue.");
+            return;
+        }
+
         setLoading(true);
         setError("");
 
         try {
+            // Record proctoring consent timestamp
+            api.post("/auth/proctoring-consent").catch(() => {});
+
             // Request browser fullscreen mode if available
             if (document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(() => {});
@@ -249,20 +258,37 @@ export default function ProctoringRules() {
                             </div>
                         </div>
 
+                        <div style={{ marginBottom: "18px", padding: "12px", backgroundColor: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                            <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "12px", color: "#334155", cursor: "pointer", lineHeight: 1.5 }}>
+                                <input
+                                    type="checkbox"
+                                    checked={proctoringConsent}
+                                    onChange={(e) => {
+                                        setProctoringConsent(e.target.checked);
+                                        if (e.target.checked) setError("");
+                                    }}
+                                    style={{ marginTop: "2px", accentColor: "#16a34a" }}
+                                />
+                                <span>
+                                    I understand this exam is proctored. Exiting fullscreen, switching tabs, and clipboard paste actions are recorded in the integrity audit log.
+                                </span>
+                            </label>
+                        </div>
+
                         <button
                             type="button"
                             onClick={handleStartExam}
-                            disabled={loading}
+                            disabled={loading || !proctoringConsent}
                             style={{
                                 width: "100%",
-                                backgroundColor: loading ? "#94a3b8" : "#16a34a",
+                                backgroundColor: (loading || !proctoringConsent) ? "#cbd5e1" : "#16a34a",
                                 color: "#ffffff",
                                 border: "none",
                                 borderRadius: "8px",
                                 padding: "14px",
                                 fontSize: "15px",
-                                fontWeight: "700",
-                                cursor: loading ? "not-allowed" : "pointer",
+                                fontWeight: "600",
+                                cursor: (loading || !proctoringConsent) ? "not-allowed" : "pointer",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import api from "../utils/api";
+import { CheckCircle2, ShieldCheck, ArrowRight } from "lucide-react";
 
 export default function ExamSubmitted() {
     const { id } = useParams();
@@ -9,6 +10,7 @@ export default function ExamSubmitted() {
     const [examData, setExamData] = useState(null);
 
     useEffect(() => {
+        window.scrollTo(0, 0);
         let isMounted = true;
         async function fetchExamDetails() {
             if (!id || id === "sample") {
@@ -40,14 +42,35 @@ export default function ExamSubmitted() {
     }, [id]);
 
     const roleTitle = examData?.roleTitle || "Technical Assessment";
-    const overallScoreRaw = examData?.overallScore ?? 8.2;
-    const scoreOutOf10 = overallScoreRaw > 10 ? (overallScoreRaw / 10).toFixed(1) : Number(overallScoreRaw).toFixed(1);
+    const overallScoreRaw = examData?.overallScore !== undefined && examData?.overallScore !== null ? Number(examData.overallScore) : 0.0;
+    const scoreOutOf10 = overallScoreRaw > 10 ? (overallScoreRaw / 10).toFixed(1) : overallScoreRaw.toFixed(1);
     const scorePercent = overallScoreRaw > 10 ? Math.round(overallScoreRaw) : Math.round(overallScoreRaw * 10);
     const questionCount = examData?.responses?.length || 5;
-    const answeredCount = examData?.responses?.filter(r => (r.userAnswer && r.userAnswer.trim()) || (r.code && r.code.trim())).length || questionCount;
 
-    const gradeLabel = scorePercent >= 80 ? "Proficient" : scorePercent >= 60 ? "Developing" : "Needs Practice";
-    const gradeColor = scorePercent >= 80 ? "wf-pill-green" : scorePercent >= 60 ? "wf-pill-blue" : "wf-pill-amber";
+    const answeredCount = examData?.responses?.filter(r => {
+        const hasText = Boolean(r.userAnswer && r.userAnswer.trim().length > 0);
+        const hasCode = Boolean(r.code && r.code.trim().length > 0 && r.score?.overallScore > 0);
+        return hasText || hasCode;
+    }).length || 0;
+
+    let gradeLabel = "Not Attempted";
+    let gradeColor = "wf-pill-amber";
+
+    if (overallScoreRaw >= 8.5) {
+        gradeLabel = "Strong";
+        gradeColor = "wf-pill-green";
+    } else if (overallScoreRaw >= 7.0) {
+        gradeLabel = "Good";
+        gradeColor = "wf-pill-green";
+    } else if (overallScoreRaw >= 4.0) {
+        gradeLabel = "Needs Detail";
+        gradeColor = "wf-pill-blue";
+    } else if (overallScoreRaw > 0) {
+        gradeLabel = "Weak";
+        gradeColor = "wf-pill-amber";
+    }
+
+    const hasViolations = Boolean(examData?.violations && examData.violations.length > 0);
 
     return (
         <div style={{ maxWidth: "680px", margin: "40px auto 0", padding: "0 16px" }}>
@@ -64,22 +87,21 @@ export default function ExamSubmitted() {
                 {/* Green Check Circle */}
                 <div
                     style={{
-                        width: "60px",
-                        height: "60px",
+                        width: "56px",
+                        height: "56px",
                         borderRadius: "50%",
                         backgroundColor: "#ecfdf5",
-                        color: "#059669",
+                        color: "#16a34a",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: "30px",
-                        margin: "0 auto 16px"
+                        margin: "0 auto 16px auto"
                     }}
                 >
-                    ✓
+                    <CheckCircle2 size={32} strokeWidth={2} />
                 </div>
 
-                <h1 style={{ fontSize: "24px", fontWeight: "700", color: "#111827", margin: "0 0 6px 0" }}>
+                <h1 style={{ fontSize: "22px", fontWeight: "600", color: "#111827", margin: "0 0 6px 0" }}>
                     Exam submitted successfully
                 </h1>
                 <p style={{ fontSize: "14px", color: "#6b7280", margin: "0 0 28px 0" }}>
@@ -88,18 +110,18 @@ export default function ExamSubmitted() {
 
                 {/* Score Number Display */}
                 <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "56px", fontWeight: "800", color: "#111827", lineHeight: 1 }}>
+                    <div style={{ fontSize: "52px", fontWeight: "600", color: "#111827", lineHeight: 1 }}>
                         {loading ? "..." : scoreOutOf10}
                     </div>
-                    <div style={{ fontSize: "14px", color: "#6b7280", marginTop: "4px" }}>
+                    <div style={{ fontSize: "14px", color: "#6b7280", marginTop: "6px" }}>
                         out of 10 ({scorePercent}%)
                     </div>
                 </div>
 
                 {/* Grade Pill */}
                 <div style={{ marginBottom: "28px" }}>
-                    <span className={`wf-pill ${gradeColor}`} style={{ padding: "4px 14px", fontSize: "13px" }}>
-                        🛡 Grade: {gradeLabel}
+                    <span className={`wf-pill ${gradeColor}`} style={{ padding: "4px 14px", fontSize: "13px", fontWeight: "500" }}>
+                        Grade: {gradeLabel}
                     </span>
                 </div>
 
@@ -118,18 +140,20 @@ export default function ExamSubmitted() {
                     }}
                 >
                     <div>
-                        <div style={{ fontWeight: "700", color: "#111827", fontSize: "15px" }}>{answeredCount} of {questionCount}</div>
+                        <div style={{ fontWeight: "600", color: "#111827", fontSize: "15px" }}>{answeredCount} of {questionCount}</div>
                         <div style={{ fontSize: "12px", color: "#6b7280" }}>Questions answered</div>
                     </div>
                     <div style={{ borderLeft: "1px solid #e5e7eb" }} />
                     <div>
-                        <div style={{ fontWeight: "700", color: "#16a34a", fontSize: "15px" }}>Evaluated</div>
-                        <div style={{ fontSize: "12px", color: "#6b7280" }}>AI Assessment Status</div>
+                        <div style={{ fontWeight: "600", color: "#16a34a", fontSize: "15px" }}>Complete</div>
+                        <div style={{ fontSize: "12px", color: "#6b7280" }}>Evaluation status</div>
                     </div>
                     <div style={{ borderLeft: "1px solid #e5e7eb" }} />
                     <div>
-                        <div style={{ fontWeight: "700", color: "#111827", fontSize: "15px" }}>Standard</div>
-                        <div style={{ fontSize: "12px", color: "#6b7280" }}>Integrity Passed</div>
+                        <div style={{ fontWeight: "600", color: hasViolations ? "#b45309" : "#16a34a", fontSize: "15px" }}>
+                            {hasViolations ? "Flagged" : "Passed"}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#6b7280" }}>Integrity check</div>
                     </div>
                 </div>
 
@@ -139,17 +163,18 @@ export default function ExamSubmitted() {
                         type="button"
                         onClick={() => navigate(`/results/${id || "latest"}`, { replace: true })}
                         className="wf-btn-primary"
-                        style={{ width: "100%", justifyContent: "center", padding: "12px", fontSize: "14px", fontWeight: "600" }}
+                        style={{ width: "100%", justifyContent: "center", padding: "12px", fontSize: "14px", fontWeight: "500" }}
                     >
-                        View full AI evaluation & skill breakdown →
+                        <span>View full AI evaluation & skill breakdown</span>
+                        <ArrowRight size={16} />
                     </button>
                     <button
                         type="button"
                         onClick={() => navigate("/dashboard", { replace: true })}
                         className="wf-btn-outline"
-                        style={{ width: "100%", justifyContent: "center", padding: "11px", fontSize: "14px", fontWeight: "600" }}
+                        style={{ width: "100%", justifyContent: "center", padding: "11px", fontSize: "14px", fontWeight: "500" }}
                     >
-                        Return to Candidate Dashboard
+                        Return to candidate dashboard
                     </button>
                     <button
                         type="button"
@@ -157,9 +182,9 @@ export default function ExamSubmitted() {
                         style={{
                             background: "none",
                             border: "none",
-                            color: "#2563eb",
+                            color: "#16a34a",
                             fontSize: "13px",
-                            fontWeight: "600",
+                            fontWeight: "500",
                             cursor: "pointer",
                             padding: "8px"
                         }}
