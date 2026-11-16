@@ -1,6 +1,13 @@
 const User = require("../models/user_schema")
+const Interview = require("../models/interview_schema")
 const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
+const {
+    recordFailedLogin,
+    checkLoginLockout,
+    clearFailedLogins,
+    validatePasswordStrength
+} = require("../services/security_service")
 
 const generateToken = function(id) {
     return jwt.sign({ id }, process.env.JWT_SECRET || "secretkey123@", { expiresIn: "30d" })
@@ -9,25 +16,57 @@ const generateToken = function(id) {
 exports.loginuser = async function(req, res) {
     try {
         const { email, password } = req.body
+        const clientIp = req.ip || req.connection?.remoteAddress || "127.0.0.1"
 
         if (!email || !password) {
             return res.status(400).json({ message: "the password or email cannot be empty" })
         }
 
-        const user = await User.findOne({ email })
+        // Rate limiting / Lockout check (5 failed attempts per 15 min)
+        const lockout = await checkLoginLockout(email, clientIp)
+        if (lockout.locked) {
+            return res.status(429).json({
+                message: `Account is temporarily locked due to multiple failed login attempts. Please try again in ${lockout.remainingMinutes} minute(s).`,
+                remainingMinutes: lockout.remainingMinutes
+            })
+        }
+
+        const user = await User.findOne({ email: email.toLowerCase().trim() })
 
         const passwordcheck = user && (await bcrypt.compare(password, user.password))
 
         if (passwordcheck) {
+            // Check temporary password expiration
+            if (user.mustChangePassword && user.tempPasswordExpiresAt && new Date() > new Date(user.tempPasswordExpiresAt)) {
+                return res.status(403).json({
+                    message: "Your temporary credentials have expired. Please contact your examination administrator to reset your access."
+                })
+            }
+
+            await clearFailedLogins(email, clientIp)
             return res.json({
                 _id: user._id,
                 username: user.username,
                 email: user.email,
                 role: user.role,
+                preferredRole: user.preferredRole,
+                mustChangePassword: Boolean(user.mustChangePassword),
+                batchIds: user.batchIds || [],
+                proctoringConsentAt: user.proctoringConsentAt || null,
                 token: generateToken(user._id),
             })
         } else {
-            return res.status(401).json({ message: "invalid user details" })
+            const attempt = await recordFailedLogin(email, clientIp)
+            if (attempt.locked) {
+                return res.status(429).json({
+                    message: "Account has been locked due to 5 consecutive failed attempts. Please try again in 15 minutes.",
+                    remainingAttempts: 0
+                })
+            }
+            return res.status(401).json({
+                message: "Invalid email or password",
+                remainingAttempts: attempt.remainingAttempts
+            })
         }
     } catch (error) {
         res.status(500).json({ message: error.message })
@@ -259,3 +298,199 @@ exports.updateProfile = async function(req, res) {
         return res.status(500).json({ message: error.message })
     }
 }
+
+/**
+ * Forced or regular password change
+ */
+exports.changePassword = async function(req, res) {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!newPassword) {
+            return res.status(400).json({ message: "New password is required." });
+        }
+
+        const strength = validatePasswordStrength(newPassword);
+        if (!strength.valid) {
+            return res.status(400).json({
+                message: strength.errors.join(". "),
+                errors: strength.errors
+            });
+        }
+
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        // If current password provided, verify it.
+        // If mustChangePassword is true, user might only have temp password from email
+        if (currentPassword) {
+            const match = await bcrypt.compare(currentPassword, user.password);
+            if (!match) {
+                return res.status(401).json({ message: "Current password is incorrect." });
+            }
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(newPassword, salt);
+        user.mustChangePassword = false;
+        user.tempPasswordExpiresAt = undefined;
+        await user.save();
+
+        return res.status(200).json({
+            message: "Password updated successfully.",
+            user: {
+                _id: user._id,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                mustChangePassword: false
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * Record candidate's proctoring rules consent timestamp
+ */
+exports.recordProctoringConsent = async function(req, res) {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
+        }
+        user.proctoringConsentAt = new Date();
+        await user.save();
+        return res.status(200).json({
+            message: "Proctoring consent accepted.",
+            proctoringConsentAt: user.proctoringConsentAt
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * Frictionless authentication for candidate invite links (token or email + temp password)
+ */
+exports.inviteLogin = async function(req, res) {
+    try {
+        const { interviewId, token, email, password } = req.body;
+
+        if (!interviewId && !token && !email) {
+            return res.status(400).json({ message: "Interview ID, token, or email is required." });
+        }
+
+        let targetInterview = null;
+        if (interviewId) {
+            targetInterview = await Interview.findById(interviewId);
+        }
+
+        // 1. Frictionless token-based entry
+        if (token && targetInterview) {
+            if (targetInterview.inviteToken && targetInterview.inviteToken === token) {
+                const user = await User.findById(targetInterview.candidateId);
+                if (!user) {
+                    return res.status(404).json({ message: "Candidate user profile not found." });
+                }
+
+                targetInterview.lastLoginAt = new Date();
+                if (targetInterview.inviteStatus === "sent") {
+                    targetInterview.inviteStatus = "logged_in";
+                }
+                await targetInterview.save();
+
+                return res.status(200).json({
+                    success: true,
+                    message: "Authenticated via secure access token.",
+                    token: generateToken(user._id),
+                    user: {
+                        _id: user._id,
+                        username: user.username,
+                        email: user.email,
+                        role: user.role,
+                        preferredRole: user.preferredRole
+                    },
+                    interview: {
+                        _id: targetInterview._id,
+                        roleTitle: targetInterview.roleTitle,
+                        domain: targetInterview.domain,
+                        assessmentType: targetInterview.assessmentType,
+                        durationSeconds: targetInterview.durationSeconds,
+                        status: targetInterview.status,
+                        questionCount: targetInterview.responses?.length || 5
+                    }
+                });
+            } else {
+                return res.status(401).json({ message: "Invalid or expired access token." });
+            }
+        }
+
+        // 2. Email + password authentication
+        if (email && password) {
+            const cleanEmail = email.trim().toLowerCase();
+            const user = await User.findOne({ email: cleanEmail });
+            if (!user) {
+                return res.status(401).json({ message: "Invalid email or temporary password." });
+            }
+
+            const match = await bcrypt.compare(password, user.password);
+            if (!match) {
+                return res.status(401).json({ message: "Invalid email or temporary password." });
+            }
+
+            if (targetInterview) {
+                targetInterview.lastLoginAt = new Date();
+                if (targetInterview.inviteStatus === "sent") {
+                    targetInterview.inviteStatus = "logged_in";
+                }
+                await targetInterview.save();
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: "Authenticated successfully.",
+                token: generateToken(user._id),
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    role: user.role,
+                    preferredRole: user.preferredRole
+                },
+                interview: targetInterview ? {
+                    _id: targetInterview._id,
+                    roleTitle: targetInterview.roleTitle,
+                    domain: targetInterview.domain,
+                    assessmentType: targetInterview.assessmentType,
+                    durationSeconds: targetInterview.durationSeconds,
+                    status: targetInterview.status,
+                    questionCount: targetInterview.responses?.length || 5
+                } : null
+            });
+        }
+
+        // 3. If interviewId provided without token/password, return briefing info if public
+        if (targetInterview) {
+            return res.status(200).json({
+                interview: {
+                    _id: targetInterview._id,
+                    roleTitle: targetInterview.roleTitle,
+                    domain: targetInterview.domain,
+                    assessmentType: targetInterview.assessmentType,
+                    durationSeconds: targetInterview.durationSeconds,
+                    status: targetInterview.status,
+                    invitedEmail: targetInterview.invitedEmail,
+                    questionCount: targetInterview.responses?.length || 5
+                }
+            });
+        }
+
+        return res.status(400).json({ message: "Insufficient credentials provided." });
+    } catch (err) {
+        console.error("[inviteLogin] Error:", err);
+        return res.status(500).json({ message: err.message });
+    }
+};

@@ -250,11 +250,51 @@ export default function AdminRegisterCandidates() {
             </div>
 
             {/* Header */}
-            <div style={{ marginBottom: "28px" }}>
+            <div style={{ marginBottom: "24px" }}>
                 <h1 className="wf-page-title">Register candidates</h1>
                 <p className="wf-page-subtitle">
                     Onboard candidates individually with instant temporary credentials, or batch import a roster via CSV.
                 </p>
+            </div>
+
+            {/* Company Exam Mode Banner */}
+            <div
+                style={{
+                    padding: "16px 20px",
+                    backgroundColor: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    borderRadius: "10px",
+                    marginBottom: "24px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "12px"
+                }}
+            >
+                <div>
+                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#166534", marginBottom: "2px" }}>
+                        Need to run a formal company exam round?
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#15803d" }}>
+                        Schedule an exam window, assign randomized tests, send email credentials with 1-click links, and monitor live progress.
+                    </div>
+                </div>
+                <Link
+                    to="/admin/batches/new"
+                    style={{
+                        padding: "8px 16px",
+                        backgroundColor: "#16a34a",
+                        color: "#ffffff",
+                        textDecoration: "none",
+                        borderRadius: "6px",
+                        fontSize: "13px",
+                        fontWeight: "500",
+                        whiteSpace: "nowrap"
+                    }}
+                >
+                    Create Exam Batch →
+                </Link>
             </div>
 
             {successMessage && (

@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Mail } from "lucide-react";
 import api from "../utils/api";
+import AssignTestModal from "../components/AssignTestModal";
 
 export default function CandidateData() {
     const navigate = useNavigate();
@@ -247,6 +249,17 @@ export default function CandidateData() {
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSelectedCandidate(null);
+                            setAssignModalOpen(true);
+                        }}
+                        className="wf-btn-outline"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                        <Mail size={15} /> Assign Test & Send Invite
+                    </button>
                     <Link to="/admin/candidates/add" className="wf-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                         <span>+</span> Register Candidates
                     </Link>
@@ -634,158 +647,17 @@ export default function CandidateData() {
                 </div>
             )}
 
-            {/* Modal 1: Assign Assessment */}
-            {assignModalOpen && selectedCandidate && (
-                <div style={{
-                    position: "fixed",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: "rgba(0,0,0,0.5)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 1100,
-                    padding: "16px"
-                }}>
-                    <div className="wf-card" style={{ width: "480px", maxWidth: "100%", padding: "28px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                            <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: 0 }}>
-                                Assign Assessment
-                            </h2>
-                            <button
-                                type="button"
-                                onClick={() => setAssignModalOpen(false)}
-                                style={{ background: "none", border: "none", fontSize: "18px", cursor: "pointer", color: "#9ca3af" }}
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 20px 0" }}>
-                            Schedule an assessment for <strong>{selectedCandidate.username}</strong> ({selectedCandidate.email}).
-                        </p>
-
-                        <form onSubmit={handleAssignSubmit}>
-                            {/* Role Selection from /api/roles */}
-                            <div style={{ marginBottom: "16px" }}>
-                                <label className="wf-form-label">Role Track</label>
-                                <select
-                                    value={assignRole}
-                                    onChange={(e) => {
-                                        setAssignRole(e.target.value);
-                                        const r = rolesList.find(item => item.title === e.target.value);
-                                        if (r?.domains?.length) setAssignDomain(r.domains[0]);
-                                    }}
-                                    className="wf-input"
-                                    style={{ backgroundColor: "#ffffff" }}
-                                    required
-                                >
-                                    {rolesList.map(r => (
-                                        <option key={r._id || r.title} value={r.title}>{r.title}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Domain */}
-                            <div style={{ marginBottom: "16px" }}>
-                                <label className="wf-form-label">Assessment Domain / Focus</label>
-                                <input
-                                    type="text"
-                                    value={assignDomain}
-                                    onChange={(e) => setAssignDomain(e.target.value)}
-                                    placeholder="e.g. Distributed Systems, React Hooks"
-                                    className="wf-input"
-                                    required
-                                />
-                            </div>
-
-                            {/* Format & Difficulty */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
-                                <div>
-                                    <label className="wf-form-label">Format</label>
-                                    <select
-                                        value={assignType}
-                                        onChange={(e) => setAssignType(e.target.value)}
-                                        className="wf-input"
-                                        style={{ backgroundColor: "#ffffff" }}
-                                    >
-                                        <option value="theory">Theory Only</option>
-                                        <option value="coding">Coding Only</option>
-                                        <option value="mixed">Mixed Assessment</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="wf-form-label">Difficulty</label>
-                                    <select
-                                        value={assignDifficulty}
-                                        onChange={(e) => setAssignDifficulty(e.target.value)}
-                                        className="wf-input"
-                                        style={{ backgroundColor: "#ffffff" }}
-                                    >
-                                        <option value="easy">Easy</option>
-                                        <option value="medium">Medium</option>
-                                        <option value="hard">Hard</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Questions & Duration */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
-                                <div>
-                                    <label className="wf-form-label">Question Count</label>
-                                    <select
-                                        value={assignQuestions}
-                                        onChange={(e) => setAssignQuestions(e.target.value)}
-                                        className="wf-input"
-                                        style={{ backgroundColor: "#ffffff" }}
-                                    >
-                                        <option value="3">3 questions</option>
-                                        <option value="5">5 questions</option>
-                                        <option value="8">8 questions</option>
-                                        <option value="10">10 questions</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="wf-form-label">Duration (minutes)</label>
-                                    <select
-                                        value={assignDuration}
-                                        onChange={(e) => setAssignDuration(e.target.value)}
-                                        className="wf-input"
-                                        style={{ backgroundColor: "#ffffff" }}
-                                    >
-                                        <option value="15">15 minutes</option>
-                                        <option value="30">30 minutes</option>
-                                        <option value="45">45 minutes</option>
-                                        <option value="60">60 minutes</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Buttons */}
-                            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-                                <button
-                                    type="button"
-                                    onClick={() => setAssignModalOpen(false)}
-                                    className="wf-btn-outline"
-                                    style={{ padding: "8px 16px" }}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={assigning}
-                                    className="wf-btn-primary"
-                                    style={{ padding: "8px 20px" }}
-                                >
-                                    {assigning ? "Assigning..." : "Assign Assessment"}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+            {/* Modal 1: Assign Assessment & Email Invite */}
+            <AssignTestModal
+                isOpen={assignModalOpen}
+                onClose={() => setAssignModalOpen(false)}
+                initialCandidate={selectedCandidate}
+                candidatesList={candidates}
+                onAssigned={(res) => {
+                    setActionToast(`Assessment assigned and invitation email dispatched to ${res.candidate?.email}.`);
+                    fetchData();
+                }}
+            />
 
             {/* Modal 2: Confirm Delete Candidate */}
             {deleteModalOpen && candidateToDelete && (
