@@ -22,6 +22,55 @@ const interviewSchema = new mongoose.Schema({
         enum: ["theory", "coding", "mixed"],
         default: "theory"
     },
+    interviewType: {
+        type: String,
+        default: "mock"
+    },
+    batchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "batch"
+    },
+    opensAt: {
+        type: Date
+    },
+    closesAt: {
+        type: Date
+    },
+    inviteToken: {
+        type: String,
+        default: ""
+    },
+    invitedEmail: {
+        type: String,
+        default: ""
+    },
+    inviteStatus: {
+        type: String,
+        enum: ["invited", "queued", "sent", "emailed", "email_failed", "failed", "logged_in", "in_progress", "submitted", "evaluated"],
+        default: "invited"
+    },
+    emailSentAt: {
+        type: Date
+    },
+    emailError: {
+        type: String,
+        default: ""
+    },
+    previewUrl: {
+        type: String,
+        default: ""
+    },
+    messageId: {
+        type: String,
+        default: ""
+    },
+    emailAttempts: {
+        type: Number,
+        default: 0
+    },
+    lastLoginAt: {
+        type: Date
+    },
     status:{
         type:String,
         enum:["pending","in-progress","submitted","evaluated","completed","abandoned"],

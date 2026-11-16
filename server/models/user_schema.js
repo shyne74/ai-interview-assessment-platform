@@ -19,12 +19,31 @@ const UserSchema=new mongoose.Schema({
         enum:['user','admin'],
         default:"user"
     },
-    
-    
-        },
-    {
-        timestamps:true
+    preferredRole: {
+        type: String,
+        default: "Backend Developer"
+    },
+    mustChangePassword: {
+        type: Boolean,
+        default: false
+    },
+    invitedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user"
+    },
+    batchIds: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "batch"
+    }],
+    tempPasswordExpiresAt: {
+        type: Date
+    },
+    proctoringConsentAt: {
+        type: Date
     }
-)
+},
+{
+    timestamps: true
+})
 
 module.exports = mongoose.model('user',UserSchema)
