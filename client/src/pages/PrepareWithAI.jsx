@@ -275,9 +275,12 @@ export default function PrepareWithAI() {
     // ==============================================================
     // JOB DESCRIPTION HANDLERS
     // ==============================================================
+    const MIN_JD_LENGTH = 80;
+    const isJdValid = jdText.trim().length >= MIN_JD_LENGTH;
+
     const handleAnalyzeJd = async () => {
-        if (!jdText.trim()) {
-            setJdError("Please enter or paste the job description text.");
+        if (!isJdValid) {
+            setJdError(`Please paste at least a few lines of a job description (minimum ${MIN_JD_LENGTH} characters).`);
             return;
         }
 
@@ -1335,9 +1338,18 @@ export default function PrepareWithAI() {
                                     <button
                                         type="button"
                                         onClick={loadSampleJd}
-                                        style={{ background: "none", border: "none", color: "#16a34a", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}
+                                        style={{
+                                            background: "none",
+                                            border: "none",
+                                            color: "#16a34a",
+                                            fontSize: "13px",
+                                            fontWeight: "500",
+                                            cursor: "pointer",
+                                            padding: 0,
+                                            textDecoration: "underline"
+                                        }}
                                     >
-                                        Load sample backend JD
+                                        Use a sample job description
                                     </button>
                                 </div>
 
@@ -1345,25 +1357,37 @@ export default function PrepareWithAI() {
                                     Paste requirements from a job posting. AI extracts the competencies and prepares practice questions.
                                 </p>
 
-                                <textarea
-                                    rows={10}
-                                    placeholder="Paste job posting text here (e.g. Full Stack Developer with experience in React, Node.js, PostgreSQL, Docker...)"
-                                    value={jdText}
-                                    onChange={(e) => setJdText(e.target.value)}
-                                    style={{
-                                        width: "100%",
-                                        padding: "12px 14px",
-                                        borderRadius: "8px",
-                                        border: "1px solid #cbd5e1",
-                                        fontSize: "13px",
-                                        lineHeight: 1.5,
-                                        boxSizing: "border-box",
-                                        fontFamily: "inherit",
-                                        backgroundColor: "#f8fafc",
-                                        marginBottom: "20px",
-                                        outline: "none"
-                                    }}
-                                />
+                                <div style={{ position: "relative", marginBottom: "16px" }}>
+                                    <textarea
+                                        rows={10}
+                                        placeholder="Paste job posting text here (e.g. Full Stack Developer with experience in React, Node.js, PostgreSQL, Docker...)"
+                                        value={jdText}
+                                        onChange={(e) => setJdText(e.target.value)}
+                                        style={{
+                                            width: "100%",
+                                            padding: "12px 14px",
+                                            borderRadius: "8px",
+                                            border: "1px solid #cbd5e1",
+                                            fontSize: "13px",
+                                            lineHeight: 1.5,
+                                            boxSizing: "border-box",
+                                            fontFamily: "inherit",
+                                            backgroundColor: "#f8fafc",
+                                            outline: "none"
+                                        }}
+                                    />
+                                    <div style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        fontSize: "12px",
+                                        color: "#64748b",
+                                        marginTop: "4px"
+                                    }}>
+                                        <span>Minimum {MIN_JD_LENGTH} characters required</span>
+                                        <span>{jdText.length} characters</span>
+                                    </div>
+                                </div>
 
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "24px" }}>
                                     <div>
@@ -1375,9 +1399,9 @@ export default function PrepareWithAI() {
                                             onChange={(e) => setJdQuestionCount(Number(e.target.value))}
                                             style={{ width: "100%", padding: "9px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px", backgroundColor: "#ffffff" }}
                                         >
-                                            <option value={3}>3 questions</option>
-                                            <option value={5}>5 questions</option>
-                                            <option value={8}>8 questions</option>
+                                            <option value={3}>3 questions (15 mins)</option>
+                                            <option value={5}>5 questions (25 mins)</option>
+                                            <option value={8}>8 questions (40 mins)</option>
                                         </select>
                                     </div>
                                     <div>
@@ -1403,9 +1427,9 @@ export default function PrepareWithAI() {
                                             onChange={(e) => setJdFormat(e.target.value)}
                                             style={{ width: "100%", padding: "9px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px", backgroundColor: "#ffffff" }}
                                         >
-                                            <option value="mixed">Mixed (Theory + Coding)</option>
-                                            <option value="theory">Theory & Concepts</option>
-                                            <option value="coding">Hands-on Coding</option>
+                                            <option value="theory">Reasoning & concepts (Theory)</option>
+                                            <option value="coding">Algorithmic coding (Coding)</option>
+                                            <option value="mixed">Mixed (Concepts + Code)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1413,27 +1437,33 @@ export default function PrepareWithAI() {
                                 <button
                                     type="button"
                                     onClick={handleAnalyzeJd}
-                                    disabled={jdLoading || !jdText.trim()}
+                                    disabled={jdLoading || !isJdValid}
                                     style={{
-                                        backgroundColor: jdLoading || !jdText.trim() ? "#94a3b8" : "#16a34a",
+                                        backgroundColor: jdLoading || !isJdValid ? "#94a3b8" : "#16a34a",
                                         color: "#ffffff",
                                         border: "none",
                                         borderRadius: "8px",
                                         padding: "12px 24px",
                                         fontSize: "14px",
                                         fontWeight: "600",
-                                        cursor: jdLoading || !jdText.trim() ? "not-allowed" : "pointer",
+                                        cursor: jdLoading || !isJdValid ? "not-allowed" : "pointer",
                                         display: "inline-flex",
                                         alignItems: "center",
                                         gap: "8px",
                                         transition: "background-color 0.15s ease"
                                     }}
-                                    onMouseEnter={(e) => { if (!jdLoading && jdText.trim()) e.currentTarget.style.backgroundColor = "#15803d"; }}
-                                    onMouseLeave={(e) => { if (!jdLoading && jdText.trim()) e.currentTarget.style.backgroundColor = "#16a34a"; }}
+                                    onMouseEnter={(e) => { if (!jdLoading && isJdValid) e.currentTarget.style.backgroundColor = "#15803d"; }}
+                                    onMouseLeave={(e) => { if (!jdLoading && isJdValid) e.currentTarget.style.backgroundColor = "#16a34a"; }}
                                 >
-                                    {jdLoading ? "Analysing job description..." : "Analyse and generate practice"}
+                                    {jdLoading ? "Analysing job description..." : "Analyse and generate questions"}
                                     <ArrowRight size={15} />
                                 </button>
+
+                                {!isJdValid && (
+                                    <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "8px" }}>
+                                        Paste at least a few lines of a job description ({jdText.trim().length}/{MIN_JD_LENGTH} characters)
+                                    </div>
+                                )}
                             </div>
 
                             {/* Right: How JD Practice Works */}
@@ -1504,7 +1534,7 @@ export default function PrepareWithAI() {
                                                 Detailed evaluation
                                             </div>
                                             <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
-                                                Evaluates your responses against production standards for that position.
+                                                Evaluates your answers against the skills and requirements outlined in the job description.
                                             </p>
                                         </div>
                                     </div>
