@@ -1,5 +1,17 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+    Check,
+    Plus,
+    X,
+    Clock,
+    ArrowRight,
+    Sparkles,
+    Sliders,
+    ChevronDown,
+    ChevronUp,
+    AlertCircle
+} from "lucide-react";
 import { ROLES, ROLE_DOMAINS } from "../config/taxonomy";
 import api from "../utils/api";
 
@@ -75,7 +87,19 @@ export default function MockInterviewSetup() {
         return [...selectedTopics, ...customTopics];
     }, [selectedTopics, customTopics]);
 
-    // AI Generation controls - enable AI generation by default when practicing targeted skill
+    // Numeric question count and live estimated time calculation
+    const numericQuestionCount = useMemo(() => {
+        const parsed = parseInt(questionCount.replace(/\D/g, ""), 10);
+        return isNaN(parsed) ? 5 : parsed;
+    }, [questionCount]);
+
+    const estimatedDurationMinutes = useMemo(() => {
+        if (numericQuestionCount <= 5) return 20;
+        if (numericQuestionCount <= 8) return 30;
+        return 45;
+    }, [numericQuestionCount]);
+
+    // AI Generation controls
     const [generateWithAI, setGenerateWithAI] = useState(true);
     const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -114,9 +138,7 @@ export default function MockInterviewSetup() {
 
     const toggleTopic = (t) => {
         if (selectedTopics.includes(t)) {
-            if (selectedTopics.length + customTopics.length > 1) {
-                setSelectedTopics(selectedTopics.filter((item) => item !== t));
-            }
+            setSelectedTopics(selectedTopics.filter((item) => item !== t));
         } else {
             setSelectedTopics([...selectedTopics, t]);
         }
@@ -124,6 +146,10 @@ export default function MockInterviewSetup() {
 
     const selectAllTopics = () => {
         setSelectedTopics(ROLE_DOMAINS[role] || []);
+    };
+
+    const clearAllPredefinedTopics = () => {
+        setSelectedTopics([]);
     };
 
     const handleAddCustomTopic = (e) => {
@@ -138,13 +164,14 @@ export default function MockInterviewSetup() {
     };
 
     const handleRemoveCustomTopic = (topicToRemove) => {
-        if (allSelectedTopics.length <= 1) return;
         setCustomTopics(customTopics.filter(t => t !== topicToRemove));
     };
 
     const handleProceedToInstructions = () => {
-        const count = parseInt(questionCount.replace(/\D/g, ""), 10) || 5;
-        const durationMinutes = count <= 5 ? 20 : count <= 8 ? 30 : 45;
+        if (allSelectedTopics.length === 0) return;
+
+        const count = numericQuestionCount;
+        const durationMinutes = estimatedDurationMinutes;
         const topicsStr = allSelectedTopics.join(", ");
 
         const targetUrl = `/interview/rules?role=${encodeURIComponent(role)}&type=${encodeURIComponent(testType)}&difficulty=${encodeURIComponent(difficulty)}&questions=${count}&assessmentType=${encodeURIComponent(assessmentType)}&duration=${durationMinutes}&domain=${encodeURIComponent(topicsStr)}&topics=${encodeURIComponent(topicsStr)}&generateWithAI=${generateWithAI}`;
@@ -153,20 +180,105 @@ export default function MockInterviewSetup() {
     };
 
     const availableRoleTopics = ROLE_DOMAINS[role] || ["General"];
+    const hasTopicsSelected = allSelectedTopics.length > 0;
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "28px", maxWidth: "1216px", margin: "0 auto" }}>
-            {/* Header */}
-            <div>
+        <div className="mock-setup-page" style={{ display: "flex", flexDirection: "column", gap: "28px", maxWidth: "1200px", margin: "0 auto" }}>
+            <style>{`
+                @keyframes fadeInUp {
+                    from {
+                        opacity: 0;
+                        transform: translateY(8px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                .stagger-1 {
+                    animation: fadeInUp 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+                }
+                .stagger-2 {
+                    animation: fadeInUp 0.26s cubic-bezier(0.16, 1, 0.3, 1) 0.06s both;
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                    .stagger-1, .stagger-2 {
+                        animation: none !important;
+                        opacity: 1 !important;
+                        transform: none !important;
+                    }
+                }
+
+                /* Topic selection chips */
+                .setup-topic-chip {
+                    padding: 6px 12px;
+                    border-radius: 6px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    background-color: #ffffff;
+                    color: #475569;
+                    border: 1px solid #cbd5e1;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    outline: none;
+                    transition: all 0.14s ease;
+                }
+                .setup-topic-chip:hover {
+                    border-color: #86efac;
+                    background-color: #f0fdf4;
+                    color: #166534;
+                }
+                .setup-topic-chip.selected {
+                    background-color: #f0fdf4;
+                    color: #15803d;
+                    border: 1.5px solid #16a34a;
+                    font-weight: 600;
+                }
+                .setup-topic-chip:focus-visible {
+                    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.25);
+                }
+
+                /* Form select and inputs */
+                .setup-select {
+                    width: 100%;
+                    padding: 10px 12px;
+                    border-radius: 8px;
+                    border: 1px solid #cbd5e1;
+                    font-size: 14px;
+                    background-color: #ffffff;
+                    color: #0f172a;
+                    outline: none;
+                    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+                }
+                .setup-select:focus {
+                    border-color: #16a34a;
+                    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
+                }
+
+                @media (max-width: 840px) {
+                    .setup-grid {
+                        grid-template-columns: 1fr !important;
+                    }
+                    .summary-card-container {
+                        position: static !important;
+                    }
+                }
+            `}</style>
+
+            {/* Header: Plain and Useful */}
+            <div className="stagger-1">
                 <div style={{
-                    fontSize: "11px",
+                    fontSize: "12px",
                     fontWeight: "700",
-                    letterSpacing: "0.08em",
+                    letterSpacing: "0.06em",
                     textTransform: "uppercase",
-                    color: "#64748b",
+                    color: "#16a34a",
                     marginBottom: "6px"
                 }}>
-                    Mock Interview Setup
+                    Practice · Mock Interview
                 </div>
                 <h1 style={{
                     fontSize: "28px",
@@ -175,95 +287,109 @@ export default function MockInterviewSetup() {
                     letterSpacing: "-0.03em",
                     margin: "0 0 6px 0"
                 }}>
-                    Set your focus. Then begin.
+                    Mock interview
                 </h1>
                 <p style={{
                     fontSize: "15px",
                     color: "#475569",
-                    margin: 0
+                    margin: 0,
+                    lineHeight: "1.5"
                 }}>
-                    Select your subject, refine your topics, and let AI generate relevant questions for your assessment.
+                    Choose a role and topics. You'll get questions generated for them.
                 </p>
             </div>
 
             {/* Split Content */}
-            <div style={{
+            <div className="setup-grid stagger-2" style={{
                 display: "grid",
                 gridTemplateColumns: "1.5fr 1fr",
-                gap: "24px"
+                gap: "24px",
+                alignItems: "start"
             }}>
-                {/* Left Column: Form & What to Expect */}
+                {/* Left Column: Form Sections & True What to Expect */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                    {/* Interview Setup Card */}
+                    
+                    {/* Main Setup Card */}
                     <div style={{
                         backgroundColor: "#ffffff",
                         border: "1px solid #e2e8f0",
                         borderRadius: "14px",
-                        padding: "28px"
+                        padding: "28px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "24px"
                     }}>
-                        <h2 style={{
-                            fontSize: "18px",
-                            fontWeight: "700",
-                            color: "#0f172a",
-                            margin: "0 0 20px 0"
-                        }}>
-                            Interview setup
-                        </h2>
-
-                        {/* Role / Subject selection */}
-                        <div style={{ marginBottom: "20px" }}>
-                            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
-                                Subject or role
-                            </label>
+                        {/* Section 1: Role */}
+                        <div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                                <label style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a" }}>
+                                    Role
+                                </label>
+                                <span style={{ fontSize: "12px", color: "#64748b" }}>
+                                    Questions match this engineering track
+                                </span>
+                            </div>
                             <select
+                                className="setup-select"
                                 value={role}
                                 onChange={(e) => setRole(e.target.value)}
-                                style={{
-                                    width: "100%",
-                                    padding: "10px 12px",
-                                    borderRadius: "8px",
-                                    border: "1px solid #cbd5e1",
-                                    fontSize: "14px",
-                                    backgroundColor: "#ffffff"
-                                }}
                             >
                                 {ROLES.map((r) => (
                                     <option key={r} value={r}>{r}</option>
                                 ))}
                             </select>
-                            <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
-                                Technical domains and question patterns are aligned to this subject.
-                            </div>
                         </div>
 
-                        {/* Topic Selection Section */}
+                        {/* Section 2: Topics */}
                         <div style={{
-                            marginBottom: "24px",
-                            padding: "16px",
+                            padding: "18px",
                             backgroundColor: "#f8fafc",
                             border: "1px solid #e2e8f0",
                             borderRadius: "10px"
                         }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                                <label style={{ fontSize: "13px", fontWeight: "700", color: "#0f172a" }}>
-                                    Target topics ({allSelectedTopics.length} selected: {selectedTopics.length} predefined, {customTopics.length} custom)
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
+                                <label style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a" }}>
+                                    Topics ({allSelectedTopics.length} selected)
                                 </label>
-                                <button
-                                    type="button"
-                                    onClick={selectAllTopics}
-                                    style={{
-                                        border: "none",
-                                        background: "none",
-                                        color: "#2563eb",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
-                                        cursor: "pointer",
-                                        padding: 0
-                                    }}
-                                >
-                                    Select all predefined
-                                </button>
+                                <div style={{ display: "flex", gap: "12px" }}>
+                                    <button
+                                        type="button"
+                                        onClick={selectAllTopics}
+                                        style={{
+                                            border: "none",
+                                            background: "none",
+                                            color: "#16a34a",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            cursor: "pointer",
+                                            padding: 0
+                                        }}
+                                    >
+                                        Select all predefined
+                                    </button>
+                                    {selectedTopics.length > 0 && (
+                                        <>
+                                            <span style={{ color: "#cbd5e1" }}>•</span>
+                                            <button
+                                                type="button"
+                                                onClick={clearAllPredefinedTopics}
+                                                style={{
+                                                    border: "none",
+                                                    background: "none",
+                                                    color: "#64748b",
+                                                    fontSize: "12px",
+                                                    fontWeight: "500",
+                                                    cursor: "pointer",
+                                                    padding: 0
+                                                }}
+                                            >
+                                                Clear
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
+
                             <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "10px" }}>
                                 Predefined curriculum topics for {role}:
                             </div>
@@ -277,73 +403,53 @@ export default function MockInterviewSetup() {
                                             key={topic}
                                             type="button"
                                             onClick={() => toggleTopic(topic)}
-                                            style={{
-                                                padding: "6px 12px",
-                                                borderRadius: "6px",
-                                                fontSize: "12px",
-                                                fontWeight: isChecked ? "600" : "500",
-                                                backgroundColor: isChecked ? "#eff6ff" : "#ffffff",
-                                                color: isChecked ? "#1d4ed8" : "#475569",
-                                                border: isChecked ? "1.5px solid #3b82f6" : "1px solid #cbd5e1",
-                                                cursor: "pointer",
-                                                display: "inline-flex",
-                                                alignItems: "center",
-                                                gap: "6px",
-                                                transition: "all 0.15s ease"
-                                            }}
+                                            className={`setup-topic-chip ${isChecked ? "selected" : ""}`}
                                         >
-                                            <span>{isChecked ? "✓" : "+"}</span>
+                                            {isChecked ? <Check size={13} strokeWidth={2.5} /> : <Plus size={13} />}
                                             {topic}
                                         </button>
                                     );
                                 })}
                             </div>
 
-                            {/* Custom Topics Section */}
+                            {/* Custom Topics Block */}
                             <div style={{
                                 backgroundColor: "#ffffff",
-                                border: "1px solid #e0e7ff",
+                                border: "1px solid #e2e8f0",
                                 borderRadius: "8px",
-                                padding: "12px 14px",
-                                marginBottom: "14px"
+                                padding: "14px"
                             }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                                    <span style={{ fontSize: "12px", fontWeight: "700", color: "#4338ca", display: "flex", alignItems: "center", gap: "6px" }}>
-                                        <span>🏷️</span> Custom Topics ({customTopics.length})
+                                    <span style={{ fontSize: "13px", fontWeight: "600", color: "#334155" }}>
+                                        Custom topics ({customTopics.length})
                                     </span>
-                                    <span style={{ fontSize: "11px", color: "#6b7280" }}>
-                                        AI will generate questions tailored to your custom entries
+                                    <span style={{ fontSize: "11px", color: "#64748b" }}>
+                                        AI will generate questions covering these
                                     </span>
                                 </div>
 
-                                {customTopics.length > 0 && (
+                                {customTopics.length === 0 ? (
+                                    <div style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic", marginBottom: "10px" }}>
+                                        Add a topic the questions should cover
+                                    </div>
+                                ) : (
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "10px" }}>
                                         {customTopics.map((ct) => (
                                             <span
                                                 key={ct}
                                                 style={{
-                                                    padding: "5px 10px",
+                                                    padding: "4px 10px",
                                                     borderRadius: "6px",
                                                     fontSize: "12px",
                                                     fontWeight: "600",
-                                                    backgroundColor: "#f5f3ff",
-                                                    color: "#6d28d9",
-                                                    border: "1.5px solid #c4b5fd",
+                                                    backgroundColor: "#f0fdf4",
+                                                    color: "#166534",
+                                                    border: "1px solid #bbf7d0",
                                                     display: "inline-flex",
                                                     alignItems: "center",
                                                     gap: "6px"
                                                 }}
                                             >
-                                                <span style={{
-                                                    fontSize: "9px",
-                                                    fontWeight: "800",
-                                                    backgroundColor: "#ede9fe",
-                                                    padding: "1px 5px",
-                                                    borderRadius: "3px",
-                                                    letterSpacing: "0.05em"
-                                                }}>
-                                                    CUSTOM
-                                                </span>
                                                 {ct}
                                                 <button
                                                     type="button"
@@ -351,49 +457,42 @@ export default function MockInterviewSetup() {
                                                     style={{
                                                         background: "none",
                                                         border: "none",
-                                                        color: "#7c3aed",
+                                                        color: "#166534",
                                                         cursor: "pointer",
-                                                        padding: "0 2px",
-                                                        fontSize: "13px",
-                                                        fontWeight: "bold",
-                                                        lineHeight: 1
+                                                        padding: 0,
+                                                        display: "flex",
+                                                        alignItems: "center"
                                                     }}
-                                                    title={`Remove custom topic "${ct}"`}
+                                                    title={`Remove ${ct}`}
                                                 >
-                                                    ✕
+                                                    <X size={13} />
                                                 </button>
                                             </span>
                                         ))}
                                     </div>
                                 )}
 
-                                {/* Add Custom Topic Form Input */}
-                                <div style={{ display: "flex", gap: "8px" }}>
+                                {/* Add Custom Topic Input */}
+                                <form onSubmit={handleAddCustomTopic} style={{ display: "flex", gap: "8px" }}>
                                     <input
                                         type="text"
-                                        placeholder="Add custom topic (e.g. React Server Components, Next.js, System Design...)"
+                                        placeholder="Add custom topic (e.g. Memory Management, Next.js, WebSockets...)"
                                         value={customTopicInput}
                                         onChange={(e) => setCustomTopicInput(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter") {
-                                                e.preventDefault();
-                                                handleAddCustomTopic(e);
-                                            }
-                                        }}
                                         style={{
                                             flex: 1,
                                             padding: "8px 12px",
                                             borderRadius: "6px",
                                             border: "1px solid #cbd5e1",
-                                            fontSize: "13px"
+                                            fontSize: "13px",
+                                            outline: "none"
                                         }}
                                     />
                                     <button
-                                        type="button"
-                                        onClick={handleAddCustomTopic}
+                                        type="submit"
                                         disabled={!customTopicInput.trim()}
                                         style={{
-                                            backgroundColor: customTopicInput.trim() ? "#4f46e5" : "#e2e8f0",
+                                            backgroundColor: customTopicInput.trim() ? "#0f172a" : "#e2e8f0",
                                             color: customTopicInput.trim() ? "#ffffff" : "#94a3b8",
                                             border: "none",
                                             borderRadius: "6px",
@@ -404,59 +503,68 @@ export default function MockInterviewSetup() {
                                             whiteSpace: "nowrap"
                                         }}
                                     >
-                                        + Add custom topic
+                                        + Add
                                     </button>
-                                </div>
+                                </form>
                             </div>
 
-                            {/* AI Question Generation Toggle & Preview Action */}
-                            {/* AI Question Generation Toggle */}
+                            {/* AI Generation Toggle under Topics */}
                             <div style={{
+                                marginTop: "14px",
+                                paddingTop: "12px",
                                 borderTop: "1px solid #e2e8f0",
-                                paddingTop: "14px",
                                 display: "flex",
                                 flexDirection: "column",
-                                gap: "6px"
+                                gap: "4px"
                             }}>
-                                <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", color: "#0f172a", fontWeight: "600", cursor: "pointer" }}>
+                                <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#0f172a", fontWeight: "600", cursor: "pointer" }}>
                                     <input
                                         type="checkbox"
                                         checked={generateWithAI}
                                         onChange={(e) => setGenerateWithAI(e.target.checked)}
-                                        style={{ width: "16px", height: "16px", accentColor: "#4f46e5", cursor: "pointer" }}
+                                        style={{ width: "16px", height: "16px", accentColor: "#16a34a", cursor: "pointer" }}
                                     />
-                                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                        <span>✨</span> Generate dynamic AI questions for chosen topics
-                                    </span>
+                                    <span>AI generates fresh questions for your chosen topics</span>
                                 </label>
-                                <div style={{ fontSize: "12px", color: "#64748b", paddingLeft: "26px" }}>
-                                    AI will tailor questions directly to your chosen topics once your examination begins.
+                                <div style={{ fontSize: "12px", color: "#64748b", paddingLeft: "24px" }}>
+                                    When disabled, questions are pulled from pre-approved question bank entries.
                                 </div>
                             </div>
+
+                            {/* Validation notice if 0 topics selected */}
+                            {!hasTopicsSelected && (
+                                <div style={{
+                                    marginTop: "12px",
+                                    padding: "8px 12px",
+                                    backgroundColor: "#fef2f2",
+                                    border: "1px solid #fecaca",
+                                    borderRadius: "6px",
+                                    color: "#991b1b",
+                                    fontSize: "12px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px"
+                                }}>
+                                    <AlertCircle size={14} />
+                                    <span>Select at least one topic to continue</span>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Two Columns: Questions & Difficulty */}
+                        {/* Section 3 & 4: Questions & Difficulty */}
                         <div style={{
                             display: "grid",
                             gridTemplateColumns: "1fr 1fr",
-                            gap: "16px",
-                            marginBottom: "16px"
+                            gap: "16px"
                         }}>
                             <div>
-                                <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
-                                    Number of questions
+                                <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "6px" }}>
+                                    Questions
                                 </label>
                                 <select
+                                    className="setup-select"
                                     value={questionCount}
                                     onChange={(e) => setQuestionCount(e.target.value)}
-                                    style={{
-                                        width: "100%",
-                                        padding: "10px 12px",
-                                        borderRadius: "8px",
-                                        border: "1px solid #cbd5e1",
-                                        fontSize: "14px",
-                                        backgroundColor: "#ffffff"
-                                    }}
                                 >
                                     <option>3 questions</option>
                                     <option>5 questions</option>
@@ -466,20 +574,13 @@ export default function MockInterviewSetup() {
                             </div>
 
                             <div>
-                                <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
+                                <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "6px" }}>
                                     Difficulty
                                 </label>
                                 <select
+                                    className="setup-select"
                                     value={difficulty}
                                     onChange={(e) => setDifficulty(e.target.value)}
-                                    style={{
-                                        width: "100%",
-                                        padding: "10px 12px",
-                                        borderRadius: "8px",
-                                        border: "1px solid #cbd5e1",
-                                        fontSize: "14px",
-                                        backgroundColor: "#ffffff"
-                                    }}
                                 >
                                     <option>Easy</option>
                                     <option>Medium</option>
@@ -500,188 +601,233 @@ export default function MockInterviewSetup() {
                                     padding: 0,
                                     fontSize: "13px",
                                     fontWeight: "600",
-                                    color: "#2563eb",
+                                    color: "#16a34a",
                                     cursor: "pointer",
                                     display: "flex",
                                     alignItems: "center",
                                     gap: "6px"
                                 }}
                             >
+                                <Sliders size={14} />
                                 <span>Advanced options</span>
-                                <span>{showAdvanced ? "▲" : "▼"}</span>
+                                {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                             </button>
                             {showAdvanced && (
-                                <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                                    <div>
-                                        <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "4px" }}>
-                                            Assessment Question Format
-                                        </label>
-                                        <select
-                                            value={assessmentType}
-                                            onChange={(e) => setAssessmentType(e.target.value)}
-                                            style={{
-                                                width: "100%",
-                                                padding: "8px 10px",
-                                                borderRadius: "6px",
-                                                border: "1px solid #cbd5e1",
-                                                fontSize: "13px",
-                                                backgroundColor: "#ffffff"
-                                            }}
-                                        >
-                                            <option value="theory">Theory & System Design (written reasoning)</option>
-                                            <option value="coding">Algorithmic Coding (evaluated with code runner)</option>
-                                            <option value="mixed">Mixed (Theory + Coding challenges)</option>
-                                        </select>
-                                    </div>
+                                <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                                    <label style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#334155" }}>
+                                        Question format
+                                    </label>
+                                    <select
+                                        className="setup-select"
+                                        value={assessmentType}
+                                        onChange={(e) => setAssessmentType(e.target.value)}
+                                    >
+                                        <option value="theory">Theory & System Design (written reasoning)</option>
+                                        <option value="coding">Algorithmic Coding (evaluated in code editor)</option>
+                                        <option value="mixed">Mixed (Theory + Coding challenges)</option>
+                                    </select>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* What to Expect Card */}
+                    {/* What to Expect Card: 3 True Statements from backend config */}
                     <div style={{
                         backgroundColor: "#ffffff",
                         border: "1px solid #e2e8f0",
                         borderRadius: "14px",
                         padding: "24px"
                     }}>
-                        <h3 style={{
+                        <h2 style={{
                             fontSize: "15px",
-                            fontWeight: "700",
+                            fontWeight: "600",
                             color: "#0f172a",
                             margin: "0 0 16px 0"
                         }}>
                             What to expect
-                        </h3>
+                        </h2>
 
-                        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                             <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
-                                <span style={{ fontSize: "16px" }}>💬</span>
-                                <div style={{ fontSize: "13px", color: "#475569", lineHeight: "1.5" }}>
-                                    Read one question at a time and explain your thinking in your own words.
+                                <div style={{
+                                    width: "22px",
+                                    height: "22px",
+                                    borderRadius: "9999px",
+                                    backgroundColor: "#f0fdf4",
+                                    color: "#16a34a",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    flexShrink: 0
+                                }}>
+                                    1
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#475569", lineHeight: "1.45" }}>
+                                    Answer {numericQuestionCount} questions one at a time with typed explanations or code.
                                 </div>
                             </div>
+
                             <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
-                                <span style={{ fontSize: "16px" }}>⚡</span>
-                                <div style={{ fontSize: "13px", color: "#475569", lineHeight: "1.5" }}>
-                                    After submitting, review an AI-assisted skill breakdown and specific feedback.
+                                <div style={{
+                                    width: "22px",
+                                    height: "22px",
+                                    borderRadius: "9999px",
+                                    backgroundColor: "#f0fdf4",
+                                    color: "#16a34a",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    flexShrink: 0
+                                }}>
+                                    2
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#475569", lineHeight: "1.45" }}>
+                                    A session countdown runs for {estimatedDurationMinutes} minutes, giving you focused time per question.
                                 </div>
                             </div>
-                        </div>
 
-                        <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
-                            Timing and submission rules should be shown once verified. This concept does not assume pauses, resume, or automatic saving.
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                                <div style={{
+                                    width: "22px",
+                                    height: "22px",
+                                    borderRadius: "9999px",
+                                    backgroundColor: "#f0fdf4",
+                                    color: "#16a34a",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    flexShrink: 0
+                                }}>
+                                    3
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#475569", lineHeight: "1.45" }}>
+                                    Your answers are evaluated when you finish, with feedback and scoring for each question.
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Right Column: Live Summary Card */}
-                <div>
+                <div className="summary-card-container" style={{ position: "sticky", top: "24px" }}>
                     <div style={{
                         backgroundColor: "#ffffff",
                         border: "1px solid #e2e8f0",
                         borderRadius: "14px",
-                        padding: "28px",
-                        position: "sticky",
-                        top: "24px"
+                        padding: "26px"
                     }}>
                         <div style={{
                             fontSize: "11px",
                             fontWeight: "700",
-                            letterSpacing: "0.08em",
+                            letterSpacing: "0.06em",
                             textTransform: "uppercase",
-                            color: "#64748b",
-                            marginBottom: "8px"
+                            color: "#16a34a",
+                            marginBottom: "6px"
                         }}>
-                            READY TO START
+                            Interview Summary
                         </div>
 
-                        <h3 style={{
+                        <h2 style={{
                             fontSize: "20px",
-                            fontWeight: "800",
+                            fontWeight: "700",
                             color: "#0f172a",
-                            margin: "0 0 20px 0"
+                            margin: "0 0 18px 0"
                         }}>
                             {role}
-                        </h3>
+                        </h2>
 
                         <div style={{
                             display: "flex",
                             flexDirection: "column",
                             gap: "12px",
-                            paddingBottom: "20px",
+                            paddingBottom: "18px",
                             borderBottom: "1px solid #f1f5f9",
-                            marginBottom: "20px",
+                            marginBottom: "18px",
                             fontSize: "13px"
                         }}>
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                <span style={{ color: "#64748b" }}>Format</span>
+                                <span style={{ color: "#64748b" }}>Interview type</span>
                                 <span style={{ fontWeight: "600", color: "#0f172a" }}>
-                                    {assessmentType === "coding" ? "Coding Assessment" : assessmentType === "mixed" ? "Mixed (Theory + Code)" : "Standard interview"}
+                                    {assessmentType === "coding" ? "Coding assessment" : assessmentType === "mixed" ? "Mixed assessment" : "Mock interview"}
                                 </span>
                             </div>
+
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                 <span style={{ color: "#64748b" }}>Topics</span>
                                 <div style={{ textAlign: "right", maxWidth: "200px" }}>
-                                    <div style={{ fontWeight: "700", color: "#0f172a", fontSize: "13px" }}>
+                                    <div style={{ fontWeight: "600", color: "#0f172a" }}>
                                         {allSelectedTopics.length} topic{allSelectedTopics.length === 1 ? "" : "s"}
                                     </div>
                                     <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px", lineHeight: "1.3" }}>
                                         {selectedTopics.length > 0 && <span>{selectedTopics.join(", ")}</span>}
                                         {customTopics.length > 0 && (
-                                            <span style={{ color: "#7c3aed", fontWeight: "600", display: "block" }}>
-                                                + {customTopics.join(", ")} (custom)
+                                            <span style={{ color: "#166534", fontWeight: "600", display: "block" }}>
+                                                + {customTopics.join(", ")}
                                             </span>
                                         )}
                                     </div>
                                 </div>
                             </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                <span style={{ color: "#64748b" }}>Generation</span>
-                                <span style={{ fontWeight: "600", color: generateWithAI ? "#166534" : "#2563eb" }}>
-                                    {generateWithAI ? "✨ AI Dynamic" : "📚 Question Bank"}
-                                </span>
-                            </div>
+
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
                                 <span style={{ color: "#64748b" }}>Questions</span>
+                                <span style={{ fontWeight: "600", color: generateWithAI ? "#166534" : "#0f172a" }}>
+                                    {generateWithAI ? "Generated by AI for your topics" : "From approved question bank"}
+                                </span>
+                            </div>
+
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "#64748b" }}>Question count</span>
                                 <span style={{ fontWeight: "600", color: "#0f172a" }}>{questionCount}</span>
                             </div>
+
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
                                 <span style={{ color: "#64748b" }}>Difficulty</span>
                                 <span style={{ fontWeight: "600", color: "#0f172a" }}>{difficulty}</span>
                             </div>
+
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "#64748b" }}>Estimated time</span>
+                                <span style={{ fontWeight: "600", color: "#16a34a", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                    <Clock size={13} />
+                                    {estimatedDurationMinutes} mins
+                                </span>
+                            </div>
                         </div>
 
-                        <p style={{
-                            fontSize: "12px",
-                            color: "#64748b",
-                            lineHeight: "1.5",
-                            margin: "0 0 20px 0"
-                        }}>
-                            Find a comfortable place to think. There's no need to have every answer.
-                        </p>
-
+                        {/* Primary Button */}
                         <button
                             type="button"
                             onClick={handleProceedToInstructions}
+                            disabled={!hasTopicsSelected}
                             style={{
                                 width: "100%",
-                                backgroundColor: "#1e3a8a",
+                                backgroundColor: !hasTopicsSelected ? "#94a3b8" : "#16a34a",
                                 color: "#ffffff",
                                 border: "none",
                                 borderRadius: "8px",
                                 padding: "12px",
                                 fontSize: "14px",
                                 fontWeight: "600",
-                                cursor: "pointer",
+                                cursor: !hasTopicsSelected ? "not-allowed" : "pointer",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                gap: "6px",
-                                marginBottom: "12px"
+                                gap: "8px",
+                                marginBottom: "12px",
+                                transition: "background-color 0.15s ease"
                             }}
+                            onMouseEnter={(e) => { if (hasTopicsSelected) e.currentTarget.style.backgroundColor = "#15803d"; }}
+                            onMouseLeave={(e) => { if (hasTopicsSelected) e.currentTarget.style.backgroundColor = "#16a34a"; }}
                         >
-                            Proceed to instructions →
+                            {!hasTopicsSelected ? "Select at least one topic" : "Continue to instructions"}
+                            {hasTopicsSelected && <ArrowRight size={15} />}
                         </button>
 
                         <div style={{ textAlign: "center" }}>
@@ -690,7 +836,8 @@ export default function MockInterviewSetup() {
                                 style={{
                                     fontSize: "13px",
                                     color: "#64748b",
-                                    textDecoration: "none"
+                                    textDecoration: "none",
+                                    fontWeight: "500"
                                 }}
                             >
                                 Back to Practice
