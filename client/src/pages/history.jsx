@@ -99,7 +99,7 @@ export default function History() {
                         color: "#64748b",
                         marginBottom: "6px"
                     }}>
-                        09 / MY PROGRESS
+                        My Progress
                     </div>
                     <h1 style={{
                         fontSize: "28px",

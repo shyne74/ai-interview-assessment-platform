@@ -388,7 +388,7 @@ export default function AdaptiveInterview() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div>
                             <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", color: "#64748b", marginBottom: "4px" }}>
-                                08 / ADAPTIVE RESULTS
+                                Adaptive Assessment Results
                             </div>
                             <h1 style={{ fontSize: "28px", fontWeight: "800", color: "#0f172a", letterSpacing: "-0.03em", margin: 0 }}>
                                 A clear baseline. A useful next step.

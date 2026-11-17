@@ -166,7 +166,7 @@ export default function MockInterviewSetup() {
                     color: "#64748b",
                     marginBottom: "6px"
                 }}>
-                    03 / MOCK INTERVIEW
+                    Mock Interview Setup
                 </div>
                 <h1 style={{
                     fontSize: "28px",

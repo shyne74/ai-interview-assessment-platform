@@ -83,7 +83,7 @@ export default function AdaptiveExamHub() {
                     color: "#64748b",
                     marginBottom: "6px"
                 }}>
-                    04 / ADAPTIVE ASSESSMENT
+                    Adaptive Assessment
                 </div>
                 <h1 style={{
                     fontSize: "28px",

@@ -240,7 +240,7 @@ export default function Result() {
                         color: "#64748b",
                         marginBottom: "6px"
                     }}>
-                        {isAdmin ? "ADMIN AUDIT / ASSESSMENT RECORD" : "08 / YOUR RESULTS"}
+                        {isAdmin ? "Admin Audit · Assessment Record" : "Assessment Results"}
                     </div>
                     <h1 style={{
                         fontSize: "28px",

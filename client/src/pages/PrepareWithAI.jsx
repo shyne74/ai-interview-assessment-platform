@@ -1,5 +1,19 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+    FileText,
+    Briefcase,
+    UploadCloud,
+    Check,
+    AlertCircle,
+    X,
+    ArrowRight,
+    Clock,
+    RotateCcw,
+    Sparkles,
+    Layers,
+    FileCheck2
+} from "lucide-react";
 import api from "../utils/api";
 
 export default function PrepareWithAI() {
@@ -31,6 +45,23 @@ export default function PrepareWithAI() {
     const [generatedQuestions, setGeneratedQuestions] = useState([]);
     const [startingPdfExam, setStartingPdfExam] = useState(false);
 
+    // Upload zone drag state & staged analysis text
+    const [isDragging, setIsDragging] = useState(false);
+    const [analysisStage, setAnalysisStage] = useState("Reading pages");
+
+    useEffect(() => {
+        if (!pdfLoading) {
+            setAnalysisStage("Reading pages");
+            return;
+        }
+        const timer1 = setTimeout(() => setAnalysisStage("Finding topics"), 1600);
+        const timer2 = setTimeout(() => setAnalysisStage("Preparing review"), 3400);
+        return () => {
+            clearTimeout(timer1);
+            clearTimeout(timer2);
+        };
+    }, [pdfLoading]);
+
     // ==========================================
     // Job Description Practice State
     // ==========================================
@@ -45,11 +76,64 @@ export default function PrepareWithAI() {
     const [startingJdExam, setStartingJdExam] = useState(false);
 
     // ==============================================================
-    // PDF HANDLERS
+    // PDF FILE VALIDATION & DRAG HANDLERS
+    // ==============================================================
+    const validateAndSetPdf = (file) => {
+        setPdfError("");
+        if (!file) return;
+
+        const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+        if (!isPdf) {
+            setPdfError("Only PDF documents are supported. Please select a valid .pdf file.");
+            return;
+        }
+
+        const MAX_SIZE_MB = 25;
+        if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+            setPdfError(`File size exceeds ${MAX_SIZE_MB} MB. Please upload a smaller document.`);
+            return;
+        }
+
+        setPdfFile(file);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            validateAndSetPdf(e.dataTransfer.files[0]);
+        }
+    };
+
+    const handleRemoveFile = () => {
+        setPdfFile(null);
+        setPdfError("");
+        setPdfText("");
+        setExtractedTopics([]);
+        setSelectedTopics([]);
+        setCustomPdfTopics([]);
+        setGeneratedQuestions([]);
+    };
+
+    // ==============================================================
+    // PDF API HANDLERS
     // ==============================================================
     const handleAnalyzePdf = async () => {
         if (!pdfFile) {
-            setPdfError("Please select a PDF file first.");
+            setPdfError("Choose a PDF to continue.");
             return;
         }
         setPdfLoading(true);
@@ -91,11 +175,19 @@ export default function PrepareWithAI() {
 
     const togglePdfTopic = (topicName) => {
         if (selectedTopics.includes(topicName)) {
-            if (selectedTopics.length === 1 && customPdfTopics.length === 0) return;
             setSelectedTopics(selectedTopics.filter((t) => t !== topicName));
         } else {
             setSelectedTopics([...selectedTopics, topicName]);
         }
+    };
+
+    const handleSelectAllTopics = () => {
+        const allNames = extractedTopics.map((t) => (typeof t === "string" ? t : t.name));
+        setSelectedTopics(allNames);
+    };
+
+    const handleClearTopics = () => {
+        setSelectedTopics([]);
     };
 
     const handleAddCustomPdfTopic = (e) => {
@@ -164,7 +256,6 @@ export default function PrepareWithAI() {
                 interviewType: "pdf-prep"
             };
 
-            // Link pre-generated questions directly
             if (generatedQuestions.length > 0) {
                 payload.questionIds = generatedQuestions.map(q => q._id).filter(Boolean);
             }
@@ -186,7 +277,7 @@ export default function PrepareWithAI() {
     // ==============================================================
     const handleAnalyzeJd = async () => {
         if (!jdText.trim()) {
-            setJdError("Please enter or paste the Job Description text.");
+            setJdError("Please enter or paste the job description text.");
             return;
         }
 
@@ -211,7 +302,7 @@ export default function PrepareWithAI() {
             setJdStep(2);
         } catch (err) {
             console.error("JD analysis error:", err);
-            setJdError(err.response?.data?.message || err.message || "Failed to analyze Job Description.");
+            setJdError(err.response?.data?.message || err.message || "Failed to analyze job description.");
         } finally {
             setJdLoading(false);
         }
@@ -266,10 +357,143 @@ export default function PrepareWithAI() {
         setJdError("");
     };
 
+    // Format file size nicely
+    const formatFileSize = (bytes) => {
+        if (!bytes) return "0 KB";
+        const kb = bytes / 1024;
+        if (kb < 1024) return `${kb.toFixed(0)} KB`;
+        return `${(kb / 1024).toFixed(1)} MB`;
+    };
+
+    // Stepper definition
+    const pdfSteps = [
+        { num: 1, label: "Upload PDF", reachable: true },
+        { num: 2, label: "Review topics", reachable: extractedTopics.length > 0 },
+        { num: 3, label: "Practise", reachable: generatedQuestions.length > 0 || (pdfStep === 2 && selectedTopics.length > 0) }
+    ];
+
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "1120px", margin: "0 auto" }}>
+        <div className="prepare-page" style={{ display: "flex", flexDirection: "column", gap: "28px", maxWidth: "1120px", margin: "0 auto" }}>
+            <style>{`
+                @keyframes fadeInUp {
+                    from {
+                        opacity: 0;
+                        transform: translateY(8px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                .prepare-fade-in {
+                    animation: fadeInUp 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .prepare-fade-in {
+                        animation: none !important;
+                        opacity: 1 !important;
+                        transform: none !important;
+                    }
+                }
+
+                /* Source Selector Tabs */
+                .source-tab-btn {
+                    flex: 1;
+                    padding: 14px 20px;
+                    background-color: #ffffff;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                    cursor: pointer;
+                    outline: none;
+                    transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+                    text-align: left;
+                }
+                .source-tab-btn:hover {
+                    border-color: #cbd5e1;
+                    background-color: #f8fafc;
+                    transform: translateY(-1px);
+                }
+                .source-tab-btn.active {
+                    border-color: #16a34a;
+                    background-color: #f0fdf4;
+                    box-shadow: 0 4px 14px rgba(22, 163, 74, 0.08);
+                }
+                .source-tab-btn:focus-visible {
+                    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.25);
+                }
+
+                /* Upload Dropzone */
+                .upload-dropzone {
+                    border: 2px dashed #cbd5e1;
+                    border-radius: 12px;
+                    padding: 44px 24px;
+                    text-align: center;
+                    background-color: #f8fafc;
+                    transition: border-color 0.18s ease, background-color 0.18s ease;
+                    outline: none;
+                }
+                .upload-dropzone.dragging {
+                    border-color: #16a34a !important;
+                    background-color: #f0fdf4 !important;
+                }
+
+                /* Topic selection cards */
+                .topic-select-row {
+                    padding: 12px 14px;
+                    border-radius: 8px;
+                    border: 1px solid #e2e8f0;
+                    background-color: #ffffff;
+                    cursor: pointer;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    transition: all 0.14s ease;
+                    outline: none;
+                }
+                .topic-select-row:hover {
+                    border-color: #cbd5e1;
+                    background-color: #fcfcfc;
+                }
+                .topic-select-row.selected {
+                    border-color: #16a34a;
+                    background-color: #f0fdf4;
+                }
+                .topic-select-row:focus-visible {
+                    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.35);
+                }
+
+                /* Step number badge */
+                .step-number-circle {
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 9999px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 12px;
+                    font-weight: 700;
+                    flex-shrink: 0;
+                }
+
+                @media (max-width: 768px) {
+                    .source-tabs-grid {
+                        flex-direction: column !important;
+                    }
+                    .prepare-content-grid {
+                        grid-template-columns: 1fr !important;
+                    }
+                    .stepper-nav {
+                        flex-wrap: wrap;
+                        gap: 8px !important;
+                    }
+                }
+            `}</style>
+
             {/* Header */}
-            <div>
+            <div className="prepare-fade-in">
                 <h1 style={{
                     fontSize: "28px",
                     fontWeight: "800",
@@ -277,284 +501,539 @@ export default function PrepareWithAI() {
                     letterSpacing: "-0.03em",
                     margin: "0 0 6px 0"
                 }}>
-                    Prepare from your own material
+                    Prepare with AI
                 </h1>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-                    <p style={{ fontSize: "15px", color: "#475569", margin: 0 }}>
-                        Turn study textbooks, research papers, or target job descriptions into tailored assessments.
-                    </p>
-                    <span style={{ fontSize: "12px", color: "#94a3b8" }}>
-                        Source → topics → questions → practice
-                    </span>
-                </div>
+                <p style={{
+                    fontSize: "15px",
+                    color: "#475569",
+                    margin: 0,
+                    lineHeight: "1.5",
+                    maxWidth: "680px"
+                }}>
+                    Turn study textbooks, research papers, or target job descriptions into tailored assessments.
+                </p>
             </div>
 
-            {/* Two Mode Cards (Image 3 Style) */}
-            <div style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "20px"
-            }}>
-                {/* PDF Preparation Card */}
-                <div
+            {/* Source Selector at the Top */}
+            <div className="source-tabs-grid prepare-fade-in" style={{ display: "flex", gap: "16px" }}>
+                {/* PDF Preparation Tab */}
+                <button
+                    type="button"
+                    className={`source-tab-btn ${activeMode === "pdf" ? "active" : ""}`}
                     onClick={() => setMode("pdf")}
-                    style={{
-                        backgroundColor: activeMode === "pdf" ? "#f0f7ff" : "#ffffff",
-                        border: activeMode === "pdf" ? "1.5px solid #3b82f6" : "1px solid #e2e8f0",
-                        borderRadius: "14px",
-                        padding: "28px",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between",
-                        cursor: "pointer",
-                        transition: "all 0.15s ease",
-                        boxShadow: activeMode === "pdf" ? "0 4px 12px rgba(59, 130, 246, 0.08)" : "none"
-                    }}
                 >
+                    <div style={{
+                        width: "44px",
+                        height: "44px",
+                        borderRadius: "10px",
+                        backgroundColor: activeMode === "pdf" ? "#dcfce7" : "#f1f5f9",
+                        border: activeMode === "pdf" ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: activeMode === "pdf" ? "#16a34a" : "#64748b",
+                        flexShrink: 0
+                    }}>
+                        <FileText size={22} strokeWidth={2} />
+                    </div>
                     <div>
-                        <div style={{ fontSize: "24px", marginBottom: "12px" }}>📄</div>
-                        <h2 style={{
-                            fontSize: "18px",
-                            fontWeight: "700",
-                            color: "#0f172a",
-                            margin: "0 0 8px 0"
+                        <div style={{
+                            fontSize: "16px",
+                            fontWeight: "600",
+                            color: activeMode === "pdf" ? "#0f172a" : "#334155",
+                            marginBottom: "2px"
                         }}>
                             PDF preparation
-                        </h2>
-                        <p style={{
-                            fontSize: "14px",
-                            color: "#475569",
-                            lineHeight: "1.5",
-                            margin: 0
-                        }}>
-                            Bring study notes or a reference document. Review the topics before generating questions.
-                        </p>
+                        </div>
+                        <div style={{ fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                            Upload notes, papers, or book chapters
+                        </div>
                     </div>
+                </button>
 
-                    <div style={{ marginTop: "20px" }}>
-                        <span style={{
-                            color: activeMode === "pdf" ? "#1e40af" : "#2563eb",
-                            fontSize: "13px",
-                            fontWeight: "700",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px"
-                        }}>
-                            Use a PDF →
-                        </span>
-                    </div>
-                </div>
-
-                {/* Job Description Practice Card */}
-                <div
+                {/* Job Description Practice Tab */}
+                <button
+                    type="button"
+                    className={`source-tab-btn ${activeMode === "jd" ? "active" : ""}`}
                     onClick={() => setMode("jd")}
-                    style={{
-                        backgroundColor: activeMode === "jd" ? "#f0fdf4" : "#ffffff",
-                        border: activeMode === "jd" ? "1.5px solid #10b981" : "1px solid #e2e8f0",
-                        borderRadius: "14px",
-                        padding: "28px",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between",
-                        cursor: "pointer",
-                        transition: "all 0.15s ease",
-                        boxShadow: activeMode === "jd" ? "0 4px 12px rgba(16, 185, 129, 0.08)" : "none"
-                    }}
                 >
+                    <div style={{
+                        width: "44px",
+                        height: "44px",
+                        borderRadius: "10px",
+                        backgroundColor: activeMode === "jd" ? "#dcfce7" : "#f1f5f9",
+                        border: activeMode === "jd" ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: activeMode === "jd" ? "#16a34a" : "#64748b",
+                        flexShrink: 0
+                    }}>
+                        <Briefcase size={22} strokeWidth={2} />
+                    </div>
                     <div>
-                        <div style={{ fontSize: "24px", marginBottom: "12px" }}>💼</div>
-                        <h2 style={{
-                            fontSize: "18px",
-                            fontWeight: "700",
-                            color: "#0f172a",
-                            margin: "0 0 8px 0"
+                        <div style={{
+                            fontSize: "16px",
+                            fontWeight: "600",
+                            color: activeMode === "jd" ? "#0f172a" : "#334155",
+                            marginBottom: "2px"
                         }}>
                             Job-description practice
-                        </h2>
-                        <p style={{
-                            fontSize: "14px",
-                            color: "#475569",
-                            lineHeight: "1.5",
-                            margin: 0
-                        }}>
-                            See the skills a role asks for, then practise questions tailored to those requirements.
-                        </p>
+                        </div>
+                        <div style={{ fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                            Match requirements from a specific role
+                        </div>
                     </div>
-
-                    <div style={{ marginTop: "20px" }}>
-                        <span style={{
-                            color: activeMode === "jd" ? "#065f46" : "#2563eb",
-                            fontSize: "13px",
-                            fontWeight: "700",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px"
-                        }}>
-                            Analyse a job description →
-                        </span>
-                    </div>
-                </div>
+                </button>
             </div>
 
             {/* ============================================================== */}
             {/* MODE 1: PDF PREPARATION                                        */}
             {/* ============================================================== */}
             {activeMode === "pdf" && (
-                <>
-                    {/* Stepper Header */}
-                    <div style={{ display: "flex", gap: "16px", alignItems: "center", fontSize: "13px", color: "#64748b", fontWeight: "600" }}>
-                        <span style={{ color: pdfStep === 1 ? "#2563eb" : "#059669" }}>
-                            {pdfStep > 1 ? "✓" : "1"} Upload PDF
-                        </span>
-                        <span>→</span>
-                        <span style={{ color: pdfStep === 2 ? "#2563eb" : pdfStep > 2 ? "#059669" : "#94a3b8" }}>
-                            {pdfStep > 2 ? "✓" : "2"} Review Real Topics & Configure
-                        </span>
-                        <span>→</span>
-                        <span style={{ color: pdfStep === 3 ? "#2563eb" : "#94a3b8" }}>
-                            3 Practise Assessment
-                        </span>
-                    </div>
+                <div key="pdf-container" className="prepare-fade-in" style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
+                    
+                    {/* Stepper with real state */}
+                    <div className="stepper-nav" style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        padding: "12px 18px",
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px"
+                    }}>
+                        {pdfSteps.map((step, idx) => {
+                            const isCompleted = pdfStep > step.num;
+                            const isCurrent = pdfStep === step.num;
+                            const isMuted = !isCompleted && !isCurrent;
 
-                    {pdfError && (
-                        <div style={{ padding: "12px 18px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600" }}>
-                            ⚠ {pdfError}
-                        </div>
-                    )}
-
-                    {/* Step 1: Upload */}
-                    {pdfStep === 1 && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" }}>
-                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "28px" }}>
-                                <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 16px 0" }}>
-                                    Choose your document
-                                </h3>
-
-                                <div
-                                    style={{
-                                        border: "2px dashed #cbd5e1",
-                                        borderRadius: "10px",
-                                        padding: "48px 24px",
-                                        textAlign: "center",
-                                        backgroundColor: "#f8fafc",
-                                        marginBottom: "20px"
-                                    }}
-                                >
-                                    <div style={{ fontSize: "36px", marginBottom: "8px" }}>📄</div>
-                                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "4px" }}>
-                                        {pdfFile ? pdfFile.name : "Drop a PDF here"}
-                                    </div>
-                                    <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "16px" }}>
-                                        {pdfFile ? `${(pdfFile.size / 1024).toFixed(0)} KB · Ready to extract` : "or choose a file from your device"}
-                                    </div>
-
-                                    <label
+                            return (
+                                <React.Fragment key={step.num}>
+                                    <button
+                                        type="button"
+                                        disabled={!step.reachable}
+                                        onClick={() => { if (step.reachable) setPdfStep(step.num); }}
                                         style={{
-                                            display: "inline-block",
-                                            padding: "8px 18px",
-                                            backgroundColor: "#ffffff",
-                                            border: "1px solid #cbd5e1",
-                                            borderRadius: "6px",
-                                            fontSize: "13px",
-                                            fontWeight: "600",
-                                            color: "#0f172a",
-                                            cursor: "pointer"
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "8px",
+                                            background: "none",
+                                            border: "none",
+                                            padding: 0,
+                                            cursor: step.reachable ? "pointer" : "default",
+                                            color: isCurrent ? "#0f172a" : isCompleted ? "#16a34a" : "#94a3b8",
+                                            fontWeight: isCurrent ? "700" : "500",
+                                            fontSize: "13px"
                                         }}
                                     >
-                                        Choose PDF
-                                        <input
-                                            type="file"
-                                            accept=".pdf,application/pdf"
-                                            onChange={(e) => {
-                                                if (e.target.files && e.target.files[0]) {
-                                                    setPdfFile(e.target.files[0]);
-                                                    setPdfError("");
-                                                }
-                                            }}
-                                            style={{ display: "none" }}
-                                        />
-                                    </label>
-                                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "12px" }}>
-                                        Supports textbooks, biographies, lecture notes, and research papers.
-                                    </div>
-                                </div>
+                                        <span style={{
+                                            width: "22px",
+                                            height: "22px",
+                                            borderRadius: "9999px",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            backgroundColor: isCompleted ? "#16a34a" : isCurrent ? "#0f172a" : "#e2e8f0",
+                                            color: isMuted ? "#64748b" : "#ffffff",
+                                            fontSize: "11px",
+                                            fontWeight: "700"
+                                        }}>
+                                            {isCompleted ? <Check size={12} strokeWidth={3} /> : step.num}
+                                        </span>
+                                        <span>{step.label}</span>
+                                    </button>
 
-                                <button
-                                    type="button"
-                                    onClick={handleAnalyzePdf}
-                                    disabled={!pdfFile || pdfLoading}
-                                    style={{
-                                        backgroundColor: !pdfFile || pdfLoading ? "#94a3b8" : "#1e3a8a",
-                                        color: "#ffffff",
-                                        border: "none",
-                                        borderRadius: "8px",
-                                        padding: "12px 24px",
-                                        fontSize: "14px",
-                                        fontWeight: "600",
-                                        cursor: !pdfFile || pdfLoading ? "not-allowed" : "pointer"
-                                    }}
-                                >
-                                    {pdfLoading ? "Analysing document..." : "Analyse document →"}
-                                </button>
+                                    {idx < pdfSteps.length - 1 && (
+                                        <span style={{ color: "#cbd5e1", fontSize: "14px" }}>→</span>
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
+                    </div>
+
+                    {/* PDF Error Alert */}
+                    {pdfError && (
+                        <div style={{
+                            padding: "12px 16px",
+                            backgroundColor: "#fef2f2",
+                            border: "1px solid #fecaca",
+                            borderRadius: "10px",
+                            color: "#991b1b",
+                            fontSize: "13px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "12px"
+                        }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <AlertCircle size={16} color="#dc2626" />
+                                <span>{pdfError}</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPdfError("")}
+                                style={{ background: "none", border: "none", color: "#991b1b", cursor: "pointer", padding: "2px" }}
+                            >
+                                <X size={15} />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* STEP 1: Upload Dropzone & How it Works */}
+                    {pdfStep === 1 && (
+                        <div className="prepare-content-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" }}>
+                            {/* Upload Area Card */}
+                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "28px" }}>
+                                <h2 style={{ fontSize: "17px", fontWeight: "600", color: "#0f172a", margin: "0 0 16px 0" }}>
+                                    Choose your document
+                                </h2>
+
+                                {!pdfFile ? (
+                                    /* Interactive Upload Dropzone */
+                                    <div
+                                        className={`upload-dropzone ${isDragging ? "dragging" : ""}`}
+                                        onDragOver={handleDragOver}
+                                        onDragLeave={handleDragLeave}
+                                        onDrop={handleDrop}
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                document.getElementById("pdf-file-input")?.click();
+                                            }
+                                        }}
+                                    >
+                                        <div style={{
+                                            width: "48px",
+                                            height: "48px",
+                                            borderRadius: "12px",
+                                            backgroundColor: isDragging ? "#dcfce7" : "#f1f5f9",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            color: isDragging ? "#16a34a" : "#64748b",
+                                            marginBottom: "12px"
+                                        }}>
+                                            <UploadCloud size={24} strokeWidth={2} />
+                                        </div>
+
+                                        <div style={{ fontSize: "15px", fontWeight: "600", color: "#0f172a", marginBottom: "4px" }}>
+                                            {isDragging ? "Release to upload" : "Drop a PDF here or choose a file"}
+                                        </div>
+
+                                        <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "18px" }}>
+                                            Supports textbooks, study notes, lecture slides, and research papers up to 25 MB.
+                                        </div>
+
+                                        <label
+                                            htmlFor="pdf-file-input"
+                                            style={{
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "8px",
+                                                padding: "9px 20px",
+                                                backgroundColor: "#ffffff",
+                                                border: "1px solid #cbd5e1",
+                                                borderRadius: "8px",
+                                                fontSize: "13px",
+                                                fontWeight: "600",
+                                                color: "#0f172a",
+                                                cursor: "pointer",
+                                                boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
+                                            }}
+                                        >
+                                            Choose PDF
+                                            <input
+                                                id="pdf-file-input"
+                                                type="file"
+                                                accept=".pdf,application/pdf"
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        validateAndSetPdf(e.target.files[0]);
+                                                    }
+                                                }}
+                                                style={{ display: "none" }}
+                                            />
+                                        </label>
+                                    </div>
+                                ) : (
+                                    /* File Card Replacement */
+                                    <div style={{
+                                        border: "1px solid #bbf7d0",
+                                        borderRadius: "12px",
+                                        padding: "20px",
+                                        backgroundColor: "#f0fdf4",
+                                        marginBottom: "20px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        gap: "16px"
+                                    }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                                            <div style={{
+                                                width: "42px",
+                                                height: "42px",
+                                                borderRadius: "10px",
+                                                backgroundColor: "#ffffff",
+                                                border: "1px solid #86efac",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                color: "#16a34a",
+                                                flexShrink: 0
+                                            }}>
+                                                <FileCheck2 size={22} strokeWidth={2} />
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "2px", wordBreak: "break-all" }}>
+                                                    {pdfFile.name}
+                                                </div>
+                                                <div style={{ fontSize: "12px", color: "#166534" }}>
+                                                    {formatFileSize(pdfFile.size)} · Ready for topic extraction
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={handleRemoveFile}
+                                            style={{
+                                                background: "none",
+                                                border: "none",
+                                                color: "#64748b",
+                                                fontSize: "13px",
+                                                fontWeight: "500",
+                                                cursor: "pointer",
+                                                padding: "6px 10px",
+                                                borderRadius: "6px",
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "4px"
+                                            }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.color = "#dc2626"; }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.color = "#64748b"; }}
+                                        >
+                                            <X size={14} />
+                                            Remove
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Action button or staged progress */}
+                                <div style={{ marginTop: "24px" }}>
+                                    {pdfLoading ? (
+                                        <div style={{
+                                            padding: "14px 20px",
+                                            backgroundColor: "#f0fdf4",
+                                            border: "1px solid #86efac",
+                                            borderRadius: "8px",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            gap: "12px"
+                                        }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                                <div style={{
+                                                    width: "14px",
+                                                    height: "14px",
+                                                    borderRadius: "50%",
+                                                    border: "2px solid #16a34a",
+                                                    borderTopColor: "transparent",
+                                                    animation: "spin 0.8s linear infinite"
+                                                }} />
+                                                <span style={{ fontSize: "14px", fontWeight: "600", color: "#15803d" }}>
+                                                    {analysisStage}...
+                                                </span>
+                                            </div>
+                                            <span style={{ fontSize: "12px", color: "#166534" }}>Extracting topics</span>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <button
+                                                type="button"
+                                                onClick={handleAnalyzePdf}
+                                                disabled={!pdfFile}
+                                                style={{
+                                                    backgroundColor: !pdfFile ? "#94a3b8" : "#16a34a",
+                                                    color: "#ffffff",
+                                                    border: "none",
+                                                    borderRadius: "8px",
+                                                    padding: "12px 24px",
+                                                    fontSize: "14px",
+                                                    fontWeight: "600",
+                                                    cursor: !pdfFile ? "not-allowed" : "pointer",
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    gap: "8px",
+                                                    transition: "background-color 0.15s ease"
+                                                }}
+                                                onMouseEnter={(e) => { if (pdfFile) e.currentTarget.style.backgroundColor = "#15803d"; }}
+                                                onMouseLeave={(e) => { if (pdfFile) e.currentTarget.style.backgroundColor = "#16a34a"; }}
+                                            >
+                                                Analyse document
+                                                <ArrowRight size={15} />
+                                            </button>
+
+                                            {!pdfFile && (
+                                                <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "8px" }}>
+                                                    Choose a PDF to continue
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
-                            {/* How it works */}
+                            {/* How It Works: Numbered Step Cards */}
                             <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "28px" }}>
-                                <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 16px 0" }}>
+                                <h3 style={{ fontSize: "16px", fontWeight: "600", color: "#0f172a", margin: "0 0 18px 0" }}>
                                     How it works
                                 </h3>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "16px", fontSize: "13px" }}>
-                                    <div>
-                                        <strong style={{ color: "#0f172a" }}>1. Genuine Content Extraction</strong>
-                                        <p style={{ margin: "2px 0 0 0", color: "#64748b" }}>We read the text and structure across pages (with OCR for scanned documents).</p>
+
+                                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                                    {/* Step 1 */}
+                                    <div style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        gap: "12px",
+                                        padding: "12px 14px",
+                                        backgroundColor: "#f8fafc",
+                                        border: "1px solid #f1f5f9",
+                                        borderRadius: "10px"
+                                    }}>
+                                        <div className="step-number-circle" style={{ backgroundColor: "#16a34a", color: "#ffffff" }}>
+                                            1
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "2px" }}>
+                                                Content extraction
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                                We read the text and structural sections across your document.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <strong style={{ color: "#0f172a" }}>2. Real Topic Identification</strong>
-                                        <p style={{ margin: "2px 0 0 0", color: "#64748b" }}>AI identifies the exact domain and key themes present in the document.</p>
+
+                                    {/* Step 2 */}
+                                    <div style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        gap: "12px",
+                                        padding: "12px 14px",
+                                        backgroundColor: "#f8fafc",
+                                        border: "1px solid #f1f5f9",
+                                        borderRadius: "10px"
+                                    }}>
+                                        <div className="step-number-circle" style={{ backgroundColor: "#16a34a", color: "#ffffff" }}>
+                                            2
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "2px" }}>
+                                                Topic identification
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                                AI identifies the primary domain, core theorems, and key technical concepts.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <strong style={{ color: "#0f172a" }}>3. Grounded Assessment</strong>
-                                        <p style={{ margin: "2px 0 0 0", color: "#64748b" }}>Questions test your understanding directly based on the uploaded material.</p>
+
+                                    {/* Step 3 */}
+                                    <div style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        gap: "12px",
+                                        padding: "12px 14px",
+                                        backgroundColor: "#f8fafc",
+                                        border: "1px solid #f1f5f9",
+                                        borderRadius: "10px"
+                                    }}>
+                                        <div className="step-number-circle" style={{ backgroundColor: "#16a34a", color: "#ffffff" }}>
+                                            3
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "2px" }}>
+                                                Targeted practice
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                                Questions test your understanding directly from your uploaded material.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* Step 2 & 3: Review Topics & Configure */}
+                    {/* STEP 2 & 3: Review Topics & Configure Parameters */}
                     {(pdfStep === 2 || pdfStep === 3) && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "24px" }}>
+                        <div className="prepare-content-grid" style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "24px" }}>
                             {/* Left Column: Topics from Document */}
-                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "24px" }}>
+                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "26px" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#2563eb", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                        DOCUMENT DOMAIN: {detectedDomain.toUpperCase()}
+                                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#16a34a", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                        Domain: {detectedDomain.toUpperCase()}
                                     </span>
                                     <button
                                         type="button"
                                         onClick={() => setPdfStep(1)}
-                                        style={{ background: "none", border: "none", color: "#64748b", fontSize: "12px", cursor: "pointer" }}
+                                        style={{ background: "none", border: "none", color: "#64748b", fontSize: "12px", cursor: "pointer", fontWeight: "500" }}
                                     >
                                         Change PDF
                                     </button>
                                 </div>
 
-                                <h3 style={{ fontSize: "18px", fontWeight: "800", color: "#0f172a", margin: "0 0 8px 0" }}>
-                                    Topics Extracted from Document
-                                </h3>
+                                <h2 style={{ fontSize: "18px", fontWeight: "600", color: "#0f172a", margin: "0 0 8px 0" }}>
+                                    Topics extracted from document
+                                </h2>
 
                                 {pdfSummary && (
-                                    <div style={{ backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", fontSize: "13px", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+                                    <div style={{
+                                        backgroundColor: "#f8fafc",
+                                        border: "1px solid #e2e8f0",
+                                        borderRadius: "8px",
+                                        padding: "12px 14px",
+                                        fontSize: "13px",
+                                        color: "#475569",
+                                        lineHeight: 1.5,
+                                        marginBottom: "16px"
+                                    }}>
                                         {pdfSummary}
                                     </div>
                                 )}
 
-                                <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 16px 0" }}>
-                                    Select the topics you want included in your assessment:
-                                </p>
+                                {/* Topic Counter & Select All / Clear Actions */}
+                                <div style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    marginBottom: "14px",
+                                    paddingBottom: "10px",
+                                    borderBottom: "1px solid #f1f5f9"
+                                }}>
+                                    <span style={{ fontSize: "13px", fontWeight: "600", color: "#334155" }}>
+                                        {selectedTopics.length} of {extractedTopics.length} topics selected
+                                    </span>
+                                    <div style={{ display: "flex", gap: "12px" }}>
+                                        <button
+                                            type="button"
+                                            onClick={handleSelectAllTopics}
+                                            style={{ background: "none", border: "none", color: "#16a34a", fontSize: "12px", fontWeight: "600", cursor: "pointer", padding: 0 }}
+                                        >
+                                            Select all
+                                        </button>
+                                        <span style={{ color: "#cbd5e1" }}>•</span>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearTopics}
+                                            style={{ background: "none", border: "none", color: "#64748b", fontSize: "12px", fontWeight: "500", cursor: "pointer", padding: 0 }}
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+                                </div>
 
-                                {/* Real Topics List */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+                                {/* Extracted Topics List */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
                                     {extractedTopics.map((topic, idx) => {
                                         const name = typeof topic === "string" ? topic : topic.name;
                                         const desc = typeof topic === "string" ? "" : topic.description;
@@ -564,18 +1043,10 @@ export default function PrepareWithAI() {
                                         return (
                                             <div
                                                 key={idx}
+                                                className={`topic-select-row ${isChecked ? "selected" : ""}`}
+                                                tabIndex={0}
                                                 onClick={() => togglePdfTopic(name)}
-                                                style={{
-                                                    padding: "12px 14px",
-                                                    borderRadius: "8px",
-                                                    border: isChecked ? "1.5px solid #16a34a" : "1px solid #e2e8f0",
-                                                    backgroundColor: isChecked ? "#f0fdf4" : "#ffffff",
-                                                    cursor: "pointer",
-                                                    display: "flex",
-                                                    justifyContent: "space-between",
-                                                    alignItems: "flex-start",
-                                                    transition: "all 0.15s ease"
-                                                }}
+                                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") togglePdfTopic(name); }}
                                             >
                                                 <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
                                                     <input
@@ -585,7 +1056,7 @@ export default function PrepareWithAI() {
                                                         style={{ marginTop: "3px", cursor: "pointer", accentColor: "#16a34a" }}
                                                     />
                                                     <div>
-                                                        <div style={{ fontSize: "14px", fontWeight: isChecked ? "700" : "600", color: isChecked ? "#15803d" : "#0f172a" }}>
+                                                        <div style={{ fontSize: "14px", fontWeight: isChecked ? "600" : "500", color: isChecked ? "#15803d" : "#0f172a" }}>
                                                             {name}
                                                         </div>
                                                         {desc && (
@@ -613,15 +1084,15 @@ export default function PrepareWithAI() {
                                     })}
                                 </div>
 
-                                {/* Custom PDF Topics */}
-                                <div style={{ marginBottom: "20px" }}>
+                                {/* Custom Subtopics */}
+                                <div>
                                     <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "6px" }}>
-                                        Add Custom Subtopic from Document
+                                        Add custom subtopic from document
                                     </label>
                                     <form onSubmit={handleAddCustomPdfTopic} style={{ display: "flex", gap: "8px" }}>
                                         <input
                                             type="text"
-                                            placeholder="e.g. Specific chapter or theorem..."
+                                            placeholder="e.g. Chapter 4 edge cases or specific algorithm..."
                                             value={customPdfInput}
                                             onChange={(e) => setCustomPdfInput(e.target.value)}
                                             style={{
@@ -630,7 +1101,8 @@ export default function PrepareWithAI() {
                                                 borderRadius: "6px",
                                                 border: "1px solid #cbd5e1",
                                                 fontSize: "13px",
-                                                backgroundColor: "#f8fafc"
+                                                backgroundColor: "#f8fafc",
+                                                outline: "none"
                                             }}
                                         />
                                         <button
@@ -656,12 +1128,12 @@ export default function PrepareWithAI() {
                                                 <span
                                                     key={ct}
                                                     style={{
-                                                        backgroundColor: "#eff6ff",
-                                                        border: "1px solid #bfdbfe",
+                                                        backgroundColor: "#f0fdf4",
+                                                        border: "1px solid #bbf7d0",
                                                         borderRadius: "16px",
                                                         padding: "3px 10px",
                                                         fontSize: "12px",
-                                                        color: "#1d4ed8",
+                                                        color: "#166534",
                                                         fontWeight: "600",
                                                         display: "flex",
                                                         alignItems: "center",
@@ -672,7 +1144,7 @@ export default function PrepareWithAI() {
                                                     <button
                                                         type="button"
                                                         onClick={() => handleRemoveCustomPdfTopic(ct)}
-                                                        style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontWeight: "bold" }}
+                                                        style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 0 }}
                                                     >
                                                         ✕
                                                     </button>
@@ -683,17 +1155,17 @@ export default function PrepareWithAI() {
                                 </div>
                             </div>
 
-                            {/* Right Column: Parameters & Actions */}
+                            {/* Right Column: Parameters & Start Assessment */}
                             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                                 <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "24px" }}>
-                                    <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 16px 0" }}>
-                                        Assessment Parameters
+                                    <h3 style={{ fontSize: "16px", fontWeight: "600", color: "#0f172a", margin: "0 0 16px 0" }}>
+                                        Assessment parameters
                                     </h3>
 
                                     <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "20px" }}>
                                         <div>
                                             <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "4px" }}>
-                                                Question Count
+                                                Question count
                                             </label>
                                             <select
                                                 value={pdfQuestionCount}
@@ -743,18 +1215,34 @@ export default function PrepareWithAI() {
                                         disabled={startingPdfExam || (selectedTopics.length === 0 && customPdfTopics.length === 0)}
                                         style={{
                                             width: "100%",
-                                            backgroundColor: startingPdfExam ? "#94a3b8" : "#1e3a8a",
+                                            backgroundColor: startingPdfExam || (selectedTopics.length === 0 && customPdfTopics.length === 0) ? "#94a3b8" : "#16a34a",
                                             color: "#ffffff",
                                             border: "none",
                                             borderRadius: "8px",
                                             padding: "12px",
                                             fontSize: "14px",
-                                            fontWeight: "700",
-                                            cursor: startingPdfExam ? "not-allowed" : "pointer",
-                                            marginBottom: "10px"
+                                            fontWeight: "600",
+                                            cursor: startingPdfExam || (selectedTopics.length === 0 && customPdfTopics.length === 0) ? "not-allowed" : "pointer",
+                                            marginBottom: "10px",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "8px",
+                                            transition: "background-color 0.15s ease"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (!startingPdfExam && (selectedTopics.length > 0 || customPdfTopics.length > 0)) {
+                                                e.currentTarget.style.backgroundColor = "#15803d";
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (!startingPdfExam && (selectedTopics.length > 0 || customPdfTopics.length > 0)) {
+                                                e.currentTarget.style.backgroundColor = "#16a34a";
+                                            }
                                         }}
                                     >
-                                        {startingPdfExam ? "Launching Assessment..." : "Start PDF Practice Assessment →"}
+                                        {startingPdfExam ? "Launching assessment..." : "Start practice assessment"}
+                                        <ArrowRight size={15} />
                                     </button>
 
                                     <button
@@ -770,22 +1258,26 @@ export default function PrepareWithAI() {
                                             fontSize: "13px",
                                             fontWeight: "600",
                                             color: "#0f172a",
-                                            cursor: "pointer"
+                                            cursor: "pointer",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "6px"
                                         }}
                                     >
-                                        {pdfLoading ? "Generating preview..." : "Preview Questions on Screen"}
+                                        {pdfLoading ? "Generating preview..." : "Preview questions"}
                                     </button>
                                 </div>
 
                                 {/* Preview Questions if generated */}
                                 {generatedQuestions.length > 0 && (
                                     <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "20px" }}>
-                                        <h4 style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a", margin: "0 0 12px 0" }}>
-                                            Generated Document Questions ({generatedQuestions.length})
+                                        <h4 style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", margin: "0 0 12px 0" }}>
+                                            Generated document questions ({generatedQuestions.length})
                                         </h4>
                                         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                                             {generatedQuestions.map((q, i) => (
-                                                <div key={i} style={{ padding: "10px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "6px", fontSize: "12px", color: "#1e293b", lineHeight: 1.4 }}>
+                                                <div key={i} style={{ padding: "10px 12px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "12px", color: "#1e293b", lineHeight: 1.4 }}>
                                                     <strong>Q{i + 1}:</strong> {q.questionText}
                                                 </div>
                                             ))}
@@ -795,44 +1287,67 @@ export default function PrepareWithAI() {
                             </div>
                         </div>
                     )}
-                </>
+                </div>
             )}
 
             {/* ============================================================== */}
             {/* MODE 2: JOB DESCRIPTION PRACTICE                               */}
             {/* ============================================================== */}
             {activeMode === "jd" && (
-                <>
+                <div key="jd-container" className="prepare-fade-in" style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
+                    
                     {jdError && (
-                        <div style={{ padding: "12px 18px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", fontWeight: "600" }}>
-                            ⚠ {jdError}
+                        <div style={{
+                            padding: "12px 16px",
+                            backgroundColor: "#fef2f2",
+                            border: "1px solid #fecaca",
+                            borderRadius: "10px",
+                            color: "#991b1b",
+                            fontSize: "13px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "12px"
+                        }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <AlertCircle size={16} color="#dc2626" />
+                                <span>{jdError}</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setJdError("")}
+                                style={{ background: "none", border: "none", color: "#991b1b", cursor: "pointer", padding: "2px" }}
+                            >
+                                <X size={15} />
+                            </button>
                         </div>
                     )}
 
+                    {/* Step 1: Input & Configuration */}
                     {jdStep === 1 && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" }}>
+                        <div className="prepare-content-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" }}>
                             {/* Left: Input Form */}
                             <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "28px" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                                    <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
-                                        Target Job Description
-                                    </h3>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                                    <h2 style={{ fontSize: "17px", fontWeight: "600", color: "#0f172a", margin: 0 }}>
+                                        Target job description
+                                    </h2>
                                     <button
                                         type="button"
                                         onClick={loadSampleJd}
-                                        style={{ background: "none", border: "none", color: "#2563eb", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}
+                                        style={{ background: "none", border: "none", color: "#16a34a", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}
                                     >
-                                        Load Sample Senior Backend JD
+                                        Load sample backend JD
                                     </button>
                                 </div>
 
-                                <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 14px 0" }}>
-                                    Paste the job posting requirements or spec below. AI will extract the key competencies and calibrate assessment questions:
+                                <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 14px 0", lineHeight: "1.5" }}>
+                                    Paste requirements from a job posting. AI extracts the competencies and prepares practice questions.
                                 </p>
 
                                 <textarea
-                                    rows={12}
-                                    placeholder="Paste job posting text here (e.g. Full Stack Developer with 3+ years experience in React, Node.js, PostgreSQL, Docker...)"
+                                    rows={10}
+                                    placeholder="Paste job posting text here (e.g. Full Stack Developer with experience in React, Node.js, PostgreSQL, Docker...)"
                                     value={jdText}
                                     onChange={(e) => setJdText(e.target.value)}
                                     style={{
@@ -845,14 +1360,15 @@ export default function PrepareWithAI() {
                                         boxSizing: "border-box",
                                         fontFamily: "inherit",
                                         backgroundColor: "#f8fafc",
-                                        marginBottom: "20px"
+                                        marginBottom: "20px",
+                                        outline: "none"
                                     }}
                                 />
 
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "24px" }}>
                                     <div>
                                         <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "4px" }}>
-                                            Question Count
+                                            Question count
                                         </label>
                                         <select
                                             value={jdQuestionCount}
@@ -866,7 +1382,7 @@ export default function PrepareWithAI() {
                                     </div>
                                     <div>
                                         <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "4px" }}>
-                                            Difficulty Target
+                                            Difficulty target
                                         </label>
                                         <select
                                             value={jdDifficulty}
@@ -880,7 +1396,7 @@ export default function PrepareWithAI() {
                                     </div>
                                     <div>
                                         <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "4px" }}>
-                                            Assessment Format
+                                            Assessment format
                                         </label>
                                         <select
                                             value={jdFormat}
@@ -906,30 +1422,91 @@ export default function PrepareWithAI() {
                                         padding: "12px 24px",
                                         fontSize: "14px",
                                         fontWeight: "600",
-                                        cursor: jdLoading || !jdText.trim() ? "not-allowed" : "pointer"
+                                        cursor: jdLoading || !jdText.trim() ? "not-allowed" : "pointer",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                        transition: "background-color 0.15s ease"
                                     }}
+                                    onMouseEnter={(e) => { if (!jdLoading && jdText.trim()) e.currentTarget.style.backgroundColor = "#15803d"; }}
+                                    onMouseLeave={(e) => { if (!jdLoading && jdText.trim()) e.currentTarget.style.backgroundColor = "#16a34a"; }}
                                 >
-                                    {jdLoading ? "Analysing JD & Calibrating Questions..." : "Analyse Job Description & Generate Practice →"}
+                                    {jdLoading ? "Analysing job description..." : "Analyse and generate practice"}
+                                    <ArrowRight size={15} />
                                 </button>
                             </div>
 
                             {/* Right: How JD Practice Works */}
                             <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "28px" }}>
-                                <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 16px 0" }}>
-                                    How Job Description Practice Works
+                                <h3 style={{ fontSize: "16px", fontWeight: "600", color: "#0f172a", margin: "0 0 18px 0" }}>
+                                    How it works
                                 </h3>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "16px", fontSize: "13px" }}>
-                                    <div>
-                                        <strong style={{ color: "#0f172a" }}>1. Role & Tech Stack Parsing</strong>
-                                        <p style={{ margin: "2px 0 0 0", color: "#64748b" }}>AI analyzes the exact seniority level, required frameworks, cloud platforms, and architecture patterns.</p>
+
+                                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                                    <div style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        gap: "12px",
+                                        padding: "12px 14px",
+                                        backgroundColor: "#f8fafc",
+                                        border: "1px solid #f1f5f9",
+                                        borderRadius: "10px"
+                                    }}>
+                                        <div className="step-number-circle" style={{ backgroundColor: "#16a34a", color: "#ffffff" }}>
+                                            1
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "2px" }}>
+                                                Role parsing
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                                AI identifies the seniority level, frameworks, cloud tools, and architecture requirements.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <strong style={{ color: "#0f172a" }}>2. Calibrated Interview Questions</strong>
-                                        <p style={{ margin: "2px 0 0 0", color: "#64748b" }}>Generates scenario-based technical questions matching the specific hiring bar of the position.</p>
+
+                                    <div style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        gap: "12px",
+                                        padding: "12px 14px",
+                                        backgroundColor: "#f8fafc",
+                                        border: "1px solid #f1f5f9",
+                                        borderRadius: "10px"
+                                    }}>
+                                        <div className="step-number-circle" style={{ backgroundColor: "#16a34a", color: "#ffffff" }}>
+                                            2
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "2px" }}>
+                                                Calibrated questions
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                                Generates questions reflecting the actual evaluation criteria of the role.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <strong style={{ color: "#0f172a" }}>3. Benchmark Evaluation</strong>
-                                        <p style={{ margin: "2px 0 0 0", color: "#64748b" }}>Evaluates your answers against senior engineering standards for the targeted role.</p>
+
+                                    <div style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        gap: "12px",
+                                        padding: "12px 14px",
+                                        backgroundColor: "#f8fafc",
+                                        border: "1px solid #f1f5f9",
+                                        borderRadius: "10px"
+                                    }}>
+                                        <div className="step-number-circle" style={{ backgroundColor: "#16a34a", color: "#ffffff" }}>
+                                            3
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "2px" }}>
+                                                Detailed evaluation
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: "13px", color: "#64748b", lineHeight: "1.4" }}>
+                                                Evaluates your responses against production standards for that position.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -938,35 +1515,35 @@ export default function PrepareWithAI() {
 
                     {/* Step 2: Breakdown & Launch */}
                     {jdStep === 2 && jdResult && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "24px" }}>
+                        <div className="prepare-content-grid" style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "24px" }}>
                             {/* Left: Questions Preview */}
-                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "24px" }}>
+                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "26px" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                                    <h3 style={{ fontSize: "18px", fontWeight: "800", color: "#0f172a", margin: 0 }}>
-                                        Tailored Interview Questions ({jdResult.questions?.length || 0})
-                                    </h3>
+                                    <h2 style={{ fontSize: "18px", fontWeight: "600", color: "#0f172a", margin: 0 }}>
+                                        Tailored interview questions ({jdResult.questions?.length || 0})
+                                    </h2>
                                     <button
                                         type="button"
                                         onClick={() => setJdStep(1)}
-                                        style={{ background: "none", border: "none", color: "#64748b", fontSize: "12px", cursor: "pointer" }}
+                                        style={{ background: "none", border: "none", color: "#64748b", fontSize: "12px", cursor: "pointer", fontWeight: "500" }}
                                     >
-                                        Edit Job Description
+                                        Edit job description
                                     </button>
                                 </div>
 
-                                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                                     {(jdResult.questions || []).map((q, idx) => (
                                         <div
                                             key={idx}
                                             style={{
-                                                padding: "16px",
-                                                borderRadius: "8px",
+                                                padding: "14px 16px",
+                                                borderRadius: "10px",
                                                 border: "1px solid #e2e8f0",
                                                 backgroundColor: "#f8fafc"
                                             }}
                                         >
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
-                                                <span style={{ fontSize: "11px", fontWeight: "700", color: "#2563eb", textTransform: "uppercase" }}>
+                                                <span style={{ fontSize: "11px", fontWeight: "700", color: "#16a34a", textTransform: "uppercase" }}>
                                                     QUESTION {idx + 1} · {q.type || q.assessmentType || "TECHNICAL"}
                                                 </span>
                                                 <span style={{ fontSize: "11px", fontWeight: "600", color: "#64748b", textTransform: "capitalize" }}>
@@ -989,21 +1566,21 @@ export default function PrepareWithAI() {
                             {/* Right: Competency Profile & Action */}
                             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                                 <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "24px" }}>
-                                    <h4 style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a", margin: "0 0 16px 0" }}>
-                                        Extracted Job Profile
-                                    </h4>
+                                    <h3 style={{ fontSize: "16px", fontWeight: "600", color: "#0f172a", margin: "0 0 16px 0" }}>
+                                        Extracted job profile
+                                    </h3>
 
                                     <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "13px", marginBottom: "20px" }}>
                                         <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                            <span style={{ color: "#64748b" }}>Target Role</span>
+                                            <span style={{ color: "#64748b" }}>Target role</span>
                                             <strong style={{ color: "#0f172a" }}>{jdResult.roleTitle}</strong>
                                         </div>
                                         <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                            <span style={{ color: "#64748b" }}>Seniority Tier</span>
+                                            <span style={{ color: "#64748b" }}>Seniority tier</span>
                                             <strong style={{ color: "#0f172a" }}>{jdResult.seniority}</strong>
                                         </div>
                                         <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                            <span style={{ color: "#64748b" }}>Primary Domain</span>
+                                            <span style={{ color: "#64748b" }}>Primary domain</span>
                                             <strong style={{ color: "#0f172a" }}>{jdResult.primaryDomain}</strong>
                                         </div>
                                     </div>
@@ -1012,7 +1589,7 @@ export default function PrepareWithAI() {
                                     {jdResult.techStack && jdResult.techStack.length > 0 && (
                                         <div style={{ marginBottom: "24px" }}>
                                             <div style={{ fontSize: "12px", fontWeight: "600", color: "#334155", marginBottom: "8px" }}>
-                                                Identified Tech Stack & Competencies
+                                                Identified tech stack & competencies
                                             </div>
                                             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                                                 {jdResult.techStack.map((tech, idx) => (
@@ -1021,11 +1598,11 @@ export default function PrepareWithAI() {
                                                         style={{
                                                             fontSize: "11px",
                                                             fontWeight: "600",
-                                                            backgroundColor: "#eff6ff",
-                                                            color: "#1d4ed8",
+                                                            backgroundColor: "#f0fdf4",
+                                                            color: "#166534",
                                                             padding: "3px 9px",
                                                             borderRadius: "4px",
-                                                            border: "1px solid #bfdbfe"
+                                                            border: "1px solid #bbf7d0"
                                                         }}
                                                     >
                                                         {tech}
@@ -1045,19 +1622,27 @@ export default function PrepareWithAI() {
                                             color: "#ffffff",
                                             border: "none",
                                             borderRadius: "8px",
-                                            padding: "14px",
+                                            padding: "13px",
                                             fontSize: "14px",
-                                            fontWeight: "700",
-                                            cursor: startingJdExam ? "not-allowed" : "pointer"
+                                            fontWeight: "600",
+                                            cursor: startingJdExam ? "not-allowed" : "pointer",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "8px",
+                                            transition: "background-color 0.15s ease"
                                         }}
+                                        onMouseEnter={(e) => { if (!startingJdExam) e.currentTarget.style.backgroundColor = "#15803d"; }}
+                                        onMouseLeave={(e) => { if (!startingJdExam) e.currentTarget.style.backgroundColor = "#16a34a"; }}
                                     >
-                                        {startingJdExam ? "Launching Assessment..." : "Start Tailored Assessment →"}
+                                        {startingJdExam ? "Launching assessment..." : "Start tailored assessment"}
+                                        <ArrowRight size={15} />
                                     </button>
                                 </div>
                             </div>
                         </div>
                     )}
-                </>
+                </div>
             )}
         </div>
     );

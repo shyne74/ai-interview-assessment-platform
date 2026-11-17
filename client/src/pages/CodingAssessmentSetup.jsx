@@ -143,7 +143,7 @@ export default function CodingAssessmentSetup() {
                     color: "#64748b",
                     marginBottom: "6px"
                 }}>
-                    03 / CODING ASSESSMENT · CODEFORCES
+                    Coding Assessment · Problem Workspace
                 </div>
                 <h1 style={{
                     fontSize: "28px",
