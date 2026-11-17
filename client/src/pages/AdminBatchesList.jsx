@@ -24,6 +24,7 @@ export default function AdminBatchesList() {
     const [batches, setBatches] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
 
     const fetchBatches = async () => {
         try {
@@ -42,64 +43,74 @@ export default function AdminBatchesList() {
         fetchBatches();
     }, []);
 
-    const filteredBatches = batches.filter(b => (
-        b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (b.organizationName && b.organizationName.toLowerCase().includes(searchQuery.toLowerCase()))
-    ));
+    const filteredBatches = batches.filter(b => {
+        const matchesSearch = b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (b.organizationName && b.organizationName.toLowerCase().includes(searchQuery.toLowerCase()));
+        const matchesStatus = statusFilter === "all" || (b.status || "").toLowerCase() === statusFilter.toLowerCase();
+        return matchesSearch && matchesStatus;
+    });
 
     return (
         <div className="wf-page-container" style={{ maxWidth: "1200px", margin: "0 auto", padding: "32px 24px" }}>
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px", marginBottom: "28px" }}>
                 <div>
-                    <h1 style={{ fontSize: "24px", fontWeight: 600, color: "#0f172a", margin: "0 0 6px 0", letterSpacing: "-0.02em" }}>
-                        Exam Batches
+                    <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", margin: "0 0 4px 0", letterSpacing: "-0.02em" }}>
+                        Exam batches
                     </h1>
                     <p style={{ fontSize: "14px", color: "#64748b", margin: 0 }}>
-                        Company exam rounds, scheduled cohorts, email invitations, and live proctoring results.
+                        Company exam cohorts, scheduled windows, candidate invitations, and completion tracking.
                     </p>
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                     <Link
                         to="/admin/batches/new"
+                        className="wf-btn-primary"
                         style={{
-                            display: "flex",
+                            display: "inline-flex",
                             alignItems: "center",
-                            gap: "8px",
-                            padding: "9px 18px",
-                            backgroundColor: "#16a34a",
-                            color: "#ffffff",
-                            textDecoration: "none",
-                            borderRadius: "8px",
-                            fontSize: "13px",
-                            fontWeight: 500,
-                            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                            gap: "6px",
+                            padding: "8px 16px",
+                            fontSize: "13px"
                         }}
                     >
-                        <Plus size={16} /> Create New Batch
+                        <Plus size={15} /> New batch
                     </Link>
                 </div>
             </div>
 
-            {/* Search Bar */}
+            {/* Filter & Search Bar */}
             <div style={{ marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
-                <div style={{ position: "relative", width: "320px" }}>
-                    <Search size={15} style={{ position: "absolute", left: "10px", top: "10px", color: "#94a3b8" }} />
-                    <input
-                        type="text"
-                        placeholder="Search batches by name..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{
-                            width: "100%",
-                            padding: "8px 12px 8px 34px",
-                            fontSize: "13px",
-                            borderRadius: "6px",
-                            border: "1px solid #cbd5e1",
-                            outline: "none"
-                        }}
-                    />
+                <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", flex: 1 }}>
+                    <div style={{ position: "relative", minWidth: "260px" }}>
+                        <Search size={14} style={{ position: "absolute", left: "10px", top: "10px", color: "#94a3b8" }} />
+                        <input
+                            type="text"
+                            placeholder="Search batches by name or organization..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="wf-input"
+                            style={{
+                                width: "100%",
+                                padding: "7px 12px 7px 32px",
+                                fontSize: "13px"
+                            }}
+                        />
+                    </div>
+
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="wf-input"
+                        style={{ width: "auto", minWidth: "130px", backgroundColor: "#ffffff" }}
+                    >
+                        <option value="all">All statuses</option>
+                        <option value="active">Active</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="draft">Draft</option>
+                        <option value="completed">Completed</option>
+                    </select>
                 </div>
 
                 <div style={{ fontSize: "13px", color: "#64748b" }}>
@@ -203,7 +214,7 @@ export default function AdminBatchesList() {
                                             onMouseOver={(e) => e.currentTarget.style.color = "#16a34a"}
                                             onMouseOut={(e) => e.currentTarget.style.color = "#0f172a"}
                                         >
-                                            {batch.name}
+                                            {(batch.name || "").replace(/\s*\d{10,}\s*$/, "").trim() || batch.name}
                                         </Link>
                                         <span
                                             style={{

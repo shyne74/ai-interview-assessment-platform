@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Mail } from "lucide-react";
+import { Mail, RefreshCw, CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
 import api from "../utils/api";
 import AssignTestModal from "../components/AssignTestModal";
 
@@ -94,18 +94,25 @@ export default function AdminDashboard() {
             setLoadingCandidates(false);
         }
 
-        // 4. Fetch Recent Integrity Alerts from All Results
+        // 4. Fetch Real Integrity Alerts
         setLoadingAlerts(true);
         try {
             const res = await api.get("/results/admin");
             const rawResults = res.data.results || [];
-            
-            // Filter attempts with risk medium or high, or flagged anomalies
+
+            // Filter real alerts: only medium or high risk, or flagged anomalies (exclude low-risk with 0 score)
             const alerts = rawResults.filter(r => {
                 const plag = r.plagiarismReport || r.interviewId?.plagiarismSummary || {};
                 const risk = (plag.riskLevel || plag.status || "").toLowerCase();
                 const violations = r.interviewId?.violations?.length || 0;
-                return risk.includes("high") || risk.includes("medium") || risk.includes("suspicious") || (plag.flaggedCount > 0) || violations >= 2;
+                const flaggedCount = plag.flaggedCount || 0;
+
+                // Never display LOW-risk attempts as alerts
+                if (risk.includes("low") && violations === 0 && flaggedCount === 0) {
+                    return false;
+                }
+
+                return risk.includes("high") || risk.includes("medium") || risk.includes("suspicious") || flaggedCount > 0 || violations >= 2;
             }).slice(0, 5).map(r => {
                 const candName = r.candidateId?.username || r.candidateId?.email?.split("@")[0] || "Candidate";
                 const candEmail = r.candidateId?.email || "";
@@ -114,8 +121,20 @@ export default function AdminDashboard() {
                 const plag = r.plagiarismReport || r.interviewId?.plagiarismSummary || {};
                 const risk = (plag.riskLevel || plag.status || "Medium").toUpperCase();
                 const violations = r.interviewId?.violations?.length || 0;
+                const flaggedCount = plag.flaggedCount || 0;
                 const resultId = r._id;
                 const interviewId = r.interviewId?._id || r.interviewId;
+
+                let reason = "Integrity anomaly flagged";
+                if (violations >= 2) {
+                    reason = `${violations} tab switch / window blur violations`;
+                } else if (flaggedCount > 0) {
+                    reason = `${flaggedCount} copy-paste or AI syntax anomalies`;
+                } else if (risk.includes("HIGH")) {
+                    reason = "High telemetry risk score";
+                } else if (risk.includes("MEDIUM")) {
+                    reason = "Unusual timing pattern";
+                }
 
                 return {
                     id: resultId,
@@ -125,6 +144,7 @@ export default function AdminDashboard() {
                     role,
                     score,
                     risk,
+                    reason,
                     violations,
                     date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Recent"
                 };
@@ -143,6 +163,19 @@ export default function AdminDashboard() {
     }, []);
 
     const totalWeeklyCompletions = analytics.weeklyVolume.reduce((acc, v) => acc + (v.count || 0), 0);
+    const totalNeedingAttention = pendingQuestionsCount + integrityAlerts.length;
+
+    // Defensive domain list filtering: remove keys > 40 chars, commas, or empty
+    const validDomainEntries = Object.entries(analytics.domainAverages || {}).filter(([dom, score]) => {
+        if (!dom || typeof dom !== "string") return false;
+        const trimmed = dom.trim();
+        if (trimmed.length > 40 || trimmed.includes(",")) return false;
+        const lower = trimmed.toLowerCase();
+        if (lower === "technical assessment" || lower === "general" || lower === "support engineering" || lower === "missing antimatter problem") return false;
+        return typeof score === "number" && score > 0;
+    });
+
+    const displayedDomains = showAllDomains ? validDomainEntries : validDomainEntries.slice(0, 5);
 
     return (
         <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
@@ -153,30 +186,31 @@ export default function AdminDashboard() {
                 <span style={{ color: "#111827", fontWeight: "600" }}>Overview</span>
             </div>
 
-            {/* Header */}
+            {/* Header: title, 1-line text, 1 primary action + small refresh icon button */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px", flexWrap: "wrap", gap: "12px" }}>
                 <div>
-                    <h1 className="wf-page-title">Platform overview</h1>
+                    <h1 className="wf-page-title">Overview</h1>
                     <p className="wf-page-subtitle">
-                        Live platform health, candidate throughput, questions awaiting validation, and integrity monitoring.
+                        Live platform activity, candidate submissions, and items requiring administrative review.
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
                     <button
                         type="button"
-                        onClick={() => setAssignModalOpen(true)}
+                        onClick={() => navigate("/admin/batches/new")}
                         className="wf-btn-primary"
-                        style={{ fontSize: "12px", padding: "8px 14px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                        style={{ fontSize: "13px", padding: "8px 16px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                     >
-                        <Mail size={14} /> Assign Test & Send Invite
+                        <Mail size={14} /> Send exam invites
                     </button>
                     <button
                         type="button"
                         onClick={loadDashboardData}
                         className="wf-btn-outline"
-                        style={{ fontSize: "12px", padding: "8px 14px" }}
+                        title="Refresh data"
+                        style={{ padding: "8px 10px", display: "inline-flex", alignItems: "center" }}
                     >
-                        🔄 Refresh Data
+                        <RefreshCw size={14} className={loadingAnalytics ? "animate-spin" : ""} />
                     </button>
                 </div>
             </div>
@@ -190,106 +224,227 @@ export default function AdminDashboard() {
                 </div>
             )}
 
-            {/* 4 Primary KPI Cards */}
+            {/* Top Row: Exactly 3 KPI Cards */}
             <div
                 style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
                     gap: "20px",
                     marginBottom: "28px"
                 }}
             >
-                {/* KPI 1: Total Interviews */}
+                {/* 1. Completed evaluations */}
                 <div className="wf-card" style={{ padding: "20px 24px" }}>
-                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
-                        Total evaluations
+                    <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
+                        Completed evaluations
                     </div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#111827", lineHeight: 1, marginBottom: "8px" }}>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1, marginBottom: "8px" }}>
                         {loadingAnalytics ? "..." : analytics.totalInterviews}
                     </div>
-                    <div style={{ fontSize: "12px", color: "#059669", fontWeight: "600" }}>
-                        Pass rate: {loadingAnalytics ? "..." : `${analytics.passRate}%`}
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>
+                        Total evaluations across all roles
                     </div>
                 </div>
 
-                {/* KPI 2: Average Score */}
+                {/* 2. Average score */}
                 <div className="wf-card" style={{ padding: "20px 24px" }}>
-                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
                         Average candidate score
                     </div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#111827", lineHeight: 1, marginBottom: "8px" }}>
-                        {loadingAnalytics ? "..." : `${analytics.averageScore}`} <span style={{ fontSize: "16px", color: "#9ca3af", fontWeight: "500" }}>/ 10</span>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#0f172a", lineHeight: 1, marginBottom: "8px" }}>
+                        {loadingAnalytics ? "..." : analytics.averageScore} <span style={{ fontSize: "16px", color: "#94a3b8", fontWeight: "500" }}>/ 10</span>
                     </div>
-                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                        Across all evaluated attempts
-                    </div>
-                </div>
-
-                {/* KPI 3: Integrity Flags */}
-                <div className="wf-card" style={{ padding: "20px 24px" }}>
-                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
-                        Integrity alerts
-                    </div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: analytics.integrityFlags > 0 ? "#dc2626" : "#111827", lineHeight: 1, marginBottom: "8px" }}>
-                        {loadingAnalytics ? "..." : analytics.integrityFlags}
-                    </div>
-                    <div style={{ fontSize: "12px", color: analytics.integrityFlags > 0 ? "#dc2626" : "#059669", fontWeight: "600" }}>
-                        {analytics.integrityFlags > 0 ? "Requires review" : "Zero active risk alerts"}
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>
+                        Across {analytics.totalInterviews} evaluations{analytics.passRate > 0 ? ` · ${analytics.passRate}% scored 7 or higher` : ""}
                     </div>
                 </div>
 
-                {/* KPI 4: Questions Awaiting Review */}
+                {/* 3. Items needing review */}
                 <div className="wf-card" style={{ padding: "20px 24px" }}>
-                    <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>
-                        Questions awaiting review
+                    <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
+                        Items needing review
                     </div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: pendingQuestionsCount > 0 ? "#d97706" : "#111827", lineHeight: 1, marginBottom: "8px" }}>
-                        {loadingQuestions ? "..." : pendingQuestionsCount}
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: totalNeedingAttention > 0 ? "#d97706" : "#0f172a", lineHeight: 1, marginBottom: "8px" }}>
+                        {loadingQuestions || loadingAlerts ? "..." : totalNeedingAttention}
                     </div>
-                    <Link
-                        to="/questionbank?status=pending"
-                        style={{ fontSize: "12px", color: "#2563eb", textDecoration: "none", fontWeight: "600" }}
-                    >
-                        {pendingQuestionsCount > 0 ? "Open review queue →" : "All questions verified →"}
-                    </Link>
+                    <div style={{ fontSize: "12px" }}>
+                        {totalNeedingAttention > 0 ? (
+                            <Link
+                                to={pendingQuestionsCount > 0 ? "/questionbank?status=pending" : "/candidate-data"}
+                                style={{ color: "#2563eb", fontWeight: "600", textDecoration: "none" }}
+                            >
+                                {pendingQuestionsCount} questions · {integrityAlerts.length} flagged attempts →
+                            </Link>
+                        ) : (
+                            <span style={{ color: "#059669", fontWeight: "500" }}>
+                                All submissions and questions verified
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            {/* Split Section: Weekly Volume Chart + Needs Attention / Quick Actions */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px", marginBottom: "28px" }}>
-                {/* Left: 8-Week Evaluation Volume Chart */}
-                <div className="wf-card">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "20px" }}>
-                        <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
+            {/* Main Panel: Needs Attention */}
+            <div className="wf-card" style={{ marginBottom: "28px", padding: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
+                        Needs attention
+                    </h2>
+                    {totalNeedingAttention > 0 && (
+                        <span style={{ fontSize: "12px", color: "#64748b" }}>
+                            {totalNeedingAttention} action {totalNeedingAttention === 1 ? "item" : "items"}
+                        </span>
+                    )}
+                </div>
+
+                {totalNeedingAttention === 0 ? (
+                    <div style={{ padding: "36px 20px", textAlign: "center" }}>
+                        <div style={{
+                            width: "44px",
+                            height: "44px",
+                            borderRadius: "50%",
+                            backgroundColor: "#f0fdf4",
+                            color: "#16a34a",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            margin: "0 auto 12px auto"
+                        }}>
+                            <CheckCircle2 size={22} />
+                        </div>
+                        <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "4px" }}>
+                            Nothing needs your attention right now.
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#64748b" }}>
+                            Zero flagged candidate attempts and all question catalog items are verified.
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                        {/* Questions awaiting review row */}
+                        {pendingQuestionsCount > 0 && (
+                            <div style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "14px 16px",
+                                backgroundColor: "#fffbeb",
+                                border: "1px solid #fef3c7",
+                                borderRadius: "8px",
+                                flexWrap: "wrap",
+                                gap: "12px"
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: "13.5px", fontWeight: "600", color: "#92400e" }}>
+                                        {pendingQuestionsCount} {pendingQuestionsCount === 1 ? "question waiting for approval" : "questions waiting for approval"}
+                                    </div>
+                                    <div style={{ fontSize: "12px", color: "#78350f" }}>
+                                        Catalog contributions waiting for review in question bank
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => navigate("/questionbank?status=pending")}
+                                    className="wf-btn-outline"
+                                    style={{ padding: "6px 14px", fontSize: "12px", backgroundColor: "#ffffff" }}
+                                >
+                                    Review questions
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Flagged Integrity Alerts Table */}
+                        {integrityAlerts.length > 0 && (
+                            <div>
+                                <div style={{ fontSize: "13px", fontWeight: "600", color: "#334155", marginBottom: "10px" }}>
+                                    Flagged exam attempts ({integrityAlerts.length})
+                                </div>
+                                <div style={{ overflowX: "auto" }}>
+                                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: "1.5px solid #e2e8f0", textAlign: "left", color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>
+                                                <th style={{ padding: "8px 10px" }}>Candidate</th>
+                                                <th style={{ padding: "8px 10px" }}>Role</th>
+                                                <th style={{ padding: "8px 10px" }}>Score</th>
+                                                <th style={{ padding: "8px 10px" }}>Flag reason</th>
+                                                <th style={{ padding: "8px 10px", textAlign: "right" }}>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {integrityAlerts.map(alert => (
+                                                <tr key={alert.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                                    <td style={{ padding: "10px" }}>
+                                                        <div style={{ fontWeight: "600", color: "#0f172a" }}>{alert.candName}</div>
+                                                        <div style={{ fontSize: "11px", color: "#64748b" }}>{alert.candEmail}</div>
+                                                    </td>
+                                                    <td style={{ padding: "10px", color: "#334155" }}>{alert.role}</td>
+                                                    <td style={{ padding: "10px", fontWeight: "700", color: "#0f172a" }}>{alert.score} / 10</td>
+                                                    <td style={{ padding: "10px" }}>
+                                                        <span style={{
+                                                            padding: "2px 8px",
+                                                            borderRadius: "4px",
+                                                            fontSize: "11px",
+                                                            fontWeight: "700",
+                                                            backgroundColor: alert.risk.includes("HIGH") ? "#fee2e2" : "#fef3c7",
+                                                            color: alert.risk.includes("HIGH") ? "#991b1b" : "#92400e",
+                                                            marginRight: "8px"
+                                                        }}>
+                                                            {alert.risk}
+                                                        </span>
+                                                        <span style={{ fontSize: "12px", color: "#64748b" }}>{alert.reason}</span>
+                                                    </td>
+                                                    <td style={{ padding: "10px", textAlign: "right" }}>
+                                                        <Link
+                                                            to={`/results/${alert.id}`}
+                                                            className="wf-btn-outline"
+                                                            style={{ fontSize: "11px", padding: "4px 12px", textDecoration: "none" }}
+                                                        >
+                                                            Audit
+                                                        </Link>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Secondary Row: Weekly Volume + Domain Performance */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                {/* Secondary 1: Weekly Volume */}
+                <div className="wf-card" style={{ padding: "20px 24px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px" }}>
+                        <h2 style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
                             Weekly evaluation volume
                         </h2>
-                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                            {loadingAnalytics ? "Loading..." : `${totalWeeklyCompletions} attempts in past 8 weeks`}
+                        <span style={{ fontSize: "12px", color: "#64748b" }}>
+                            {loadingAnalytics ? "Loading..." : `${totalWeeklyCompletions} attempts`}
                         </span>
                     </div>
 
-                    {/* Bar visualization */}
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "flex-end",
-                            gap: "12px",
-                            height: "170px",
-                            padding: "10px 0 20px 0",
-                            borderBottom: "1px solid #f3f4f6",
-                            marginBottom: "12px"
-                        }}
-                    >
-                        {loadingAnalytics ? (
-                            <div style={{ width: "100%", textAlign: "center", color: "#6b7280", fontSize: "13px", alignSelf: "center" }}>
-                                Loading volume trends...
-                            </div>
-                        ) : analytics.weeklyVolume.length === 0 ? (
-                            <div style={{ width: "100%", textAlign: "center", color: "#6b7280", fontSize: "13px", alignSelf: "center" }}>
-                                No completed evaluations recorded yet.
-                            </div>
-                        ) : (
-                            analytics.weeklyVolume.map((bar, idx) => (
+                    {loadingAnalytics ? (
+                        <div style={{ padding: "40px 0", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
+                            Loading volume data...
+                        </div>
+                    ) : totalWeeklyCompletions === 0 || analytics.weeklyVolume.length === 0 ? (
+                        <div style={{ padding: "40px 0", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
+                            No evaluations in the last 8 weeks.
+                        </div>
+                    ) : (
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "flex-end",
+                                gap: "10px",
+                                height: "140px",
+                                padding: "10px 0 10px 0"
+                            }}
+                        >
+                            {analytics.weeklyVolume.map((bar, idx) => (
                                 <div
                                     key={idx}
                                     style={{
@@ -304,260 +459,66 @@ export default function AdminDashboard() {
                                     <div
                                         style={{
                                             width: "100%",
-                                            height: `${bar.height || Math.max(16, bar.count * 15)}px`,
-                                            backgroundColor: bar.count > 0 ? "#16a34a" : "#e5e7eb",
+                                            height: `${bar.height || Math.max(12, bar.count * 12)}px`,
+                                            backgroundColor: bar.count > 0 ? "#16a34a" : "#e2e8f0",
                                             borderRadius: "4px",
                                             transition: "height 0.3s ease"
                                         }}
                                     />
-                                    <span style={{ fontSize: "11px", color: "#6b7280", fontWeight: "500" }}>
+                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: "500" }}>
                                         {bar.week}
                                     </span>
                                 </div>
-                            ))
-                        )}
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#6b7280" }}>
-                        <span>8-week longitudinal trend</span>
-                        <span>Height proportional to volume</span>
-                    </div>
-                </div>
-
-                {/* Right: Needs Attention & Action Hub */}
-                <div className="wf-card">
-                    <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 20px 0" }}>
-                        Needs attention
-                    </h2>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                        {/* Item 1: Pending questions */}
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                paddingBottom: "14px",
-                                borderBottom: "1px solid #f3f4f6"
-                            }}
-                        >
-                            <div>
-                                <div style={{ fontSize: "13px", color: "#111827", fontWeight: "600" }}>
-                                    {pendingQuestionsCount > 0
-                                        ? `${pendingQuestionsCount} questions waiting for approval`
-                                        : "All questions in bank validated"}
-                                </div>
-                                <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                                    {totalQuestionsCount} total questions in catalog
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => navigate("/questionbank?status=pending")}
-                                className="wf-btn-outline"
-                                style={{ padding: "5px 14px", fontSize: "12px", cursor: "pointer" }}
-                            >
-                                {pendingQuestionsCount > 0 ? "Review" : "Open Bank"}
-                            </button>
+                            ))}
                         </div>
-
-                        {/* Item 2: Flagged integrity */}
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                paddingBottom: "14px",
-                                borderBottom: "1px solid #f3f4f6"
-                            }}
-                        >
-                            <div>
-                                <div style={{ fontSize: "13px", color: analytics.integrityFlags > 0 ? "#dc2626" : "#111827", fontWeight: "600" }}>
-                                    {analytics.integrityFlags > 0
-                                        ? `${analytics.integrityFlags} attempts flagged for review`
-                                        : "Zero high integrity risks"}
-                                </div>
-                                <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                                    Tab switches & copy-paste alerts
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => navigate("/candidate-data")}
-                                className="wf-btn-outline"
-                                style={{ padding: "5px 14px", fontSize: "12px", cursor: "pointer" }}
-                            >
-                                Inspect
-                            </button>
-                        </div>
-
-                        {/* Item 3: Candidate registration */}
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between"
-                            }}
-                        >
-                            <div>
-                                <div style={{ fontSize: "13px", color: "#111827", fontWeight: "600" }}>
-                                    {candidateStats.count} registered candidates
-                                </div>
-                                <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                                    Add new test-takers or bulk import CSV
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => navigate("/admin/candidates/add")}
-                                className="wf-btn-outline"
-                                style={{ padding: "5px 14px", fontSize: "12px", cursor: "pointer" }}
-                            >
-                                + Register
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Bottom Row: Recent Integrity Alerts Table + Domain Averages Card */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" }}>
-                {/* Recent Integrity Alerts */}
-                <div className="wf-card">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                        <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
-                            Recent integrity alerts
-                        </h2>
-                        <Link to="/candidate-data" style={{ fontSize: "12px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>
-                            View all attempts →
-                        </Link>
-                    </div>
-
-                    {loadingAlerts ? (
-                        <div style={{ padding: "24px 0", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
-                            Checking integrity telemetry...
-                        </div>
-                    ) : integrityAlerts.length === 0 ? (
-                        <div style={{ padding: "24px 0", textAlign: "center", color: "#059669", fontSize: "13px", fontWeight: "600" }}>
-                            ✓ No suspicious attempts flagged. All evaluations meet integrity thresholds.
-                        </div>
-                    ) : (
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                            <thead>
-                                <tr style={{ borderBottom: "1.5px solid #e5e7eb", textAlign: "left", color: "#6b7280", fontSize: "11px", textTransform: "uppercase" }}>
-                                    <th style={{ padding: "8px 10px" }}>Candidate</th>
-                                    <th style={{ padding: "8px 10px" }}>Role</th>
-                                    <th style={{ padding: "8px 10px" }}>Score</th>
-                                    <th style={{ padding: "8px 10px" }}>Risk Level</th>
-                                    <th style={{ padding: "8px 10px", textAlign: "right" }}>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {integrityAlerts.map(alert => (
-                                    <tr key={alert.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                                        <td style={{ padding: "10px" }}>
-                                            <div style={{ fontWeight: "600", color: "#111827" }}>{alert.candName}</div>
-                                            <div style={{ fontSize: "11px", color: "#6b7280" }}>{alert.candEmail}</div>
-                                        </td>
-                                        <td style={{ padding: "10px", color: "#374151" }}>{alert.role}</td>
-                                        <td style={{ padding: "10px", fontWeight: "700", color: "#111827" }}>{alert.score} / 10</td>
-                                        <td style={{ padding: "10px" }}>
-                                            <span style={{
-                                                padding: "3px 8px",
-                                                borderRadius: "4px",
-                                                fontSize: "11px",
-                                                fontWeight: "700",
-                                                backgroundColor: alert.risk.includes("HIGH") ? "#fee2e2" : "#fef3c7",
-                                                color: alert.risk.includes("HIGH") ? "#991b1b" : "#92400e"
-                                            }}>
-                                                {alert.risk}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: "10px", textAlign: "right" }}>
-                                            <Link
-                                                to={`/results/${alert.id}`}
-                                                className="wf-btn-outline"
-                                                style={{ fontSize: "11px", padding: "4px 10px", textDecoration: "none" }}
-                                            >
-                                                Audit →
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
                     )}
                 </div>
 
-                {/* Domain Performance Averages */}
-                <div className="wf-card">
+                {/* Secondary 2: Domain Averages */}
+                <div className="wf-card" style={{ padding: "20px 24px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                        <h2 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                        <h2 style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
                             Domain performance averages
                         </h2>
+                        {validDomainEntries.length > 5 && (
+                            <button
+                                type="button"
+                                onClick={() => setShowAllDomains(!showAllDomains)}
+                                style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#2563eb",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    cursor: "pointer",
+                                    padding: 0
+                                }}
+                            >
+                                {showAllDomains ? "Show top 5" : `View all (${validDomainEntries.length})`}
+                            </button>
+                        )}
                     </div>
 
                     {loadingAnalytics ? (
-                        <div style={{ padding: "24px 0", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                        <div style={{ padding: "40px 0", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
                             Calculating domain averages...
                         </div>
-                    ) : (() => {
-                        // Defensive filtering: ignore keys > 40 chars, containing commas, or generic placeholders
-                        const validDomainEntries = Object.entries(analytics.domainAverages || {}).filter(([dom]) => {
-                            if (!dom || typeof dom !== "string") return false;
-                            const trimmed = dom.trim();
-                            if (trimmed.length > 40 || trimmed.includes(",")) return false;
-                            const lower = trimmed.toLowerCase();
-                            if (lower === "technical assessment" || lower === "general" || lower === "support engineering" || lower === "missing antimatter problem") return false;
-                            return true;
-                        });
-
-                        if (validDomainEntries.length === 0) {
-                            return (
-                                <div style={{ padding: "24px 0", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
-                                    No domain data yet
+                    ) : validDomainEntries.length === 0 ? (
+                        <div style={{ padding: "40px 0", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
+                            No domain data recorded yet.
+                        </div>
+                    ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                            {displayedDomains.map(([dom, avgScore]) => (
+                                <div key={dom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px", borderBottom: "1px solid #f1f5f9" }}>
+                                    <span style={{ fontSize: "13px", fontWeight: "500", color: "#334155" }}>{dom}</span>
+                                    <span style={{ fontSize: "13px", fontWeight: "700", color: avgScore >= 7.0 ? "#059669" : "#d97706" }}>
+                                        {avgScore} / 10
+                                    </span>
                                 </div>
-                            );
-                        }
-
-                        const displayedEntries = showAllDomains ? validDomainEntries : validDomainEntries.slice(0, 8);
-
-                        return (
-                            <div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                    {displayedEntries.map(([dom, avgScore]) => (
-                                        <div key={dom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "10px", borderBottom: "1px solid #f3f4f6" }}>
-                                            <span style={{ fontSize: "13px", fontWeight: "600", color: "#374151" }}>{dom}</span>
-                                            <span style={{ fontSize: "13px", fontWeight: "700", color: avgScore >= 7.0 ? "#059669" : "#d97706" }}>
-                                                {avgScore} / 10
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                                {validDomainEntries.length > 8 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowAllDomains(!showAllDomains)}
-                                        style={{
-                                            marginTop: "14px",
-                                            background: "none",
-                                            border: "none",
-                                            color: "#2563eb",
-                                            fontSize: "12px",
-                                            fontWeight: "600",
-                                            cursor: "pointer",
-                                            padding: 0,
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: "4px"
-                                        }}
-                                    >
-                                        {showAllDomains ? "Show top 8" : `View all (${validDomainEntries.length}) →`}
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })()}
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 

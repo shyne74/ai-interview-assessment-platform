@@ -17,7 +17,8 @@ import {
     FileText,
     Plus,
     X,
-    Loader2
+    Loader2,
+    Menu
 } from "lucide-react";
 
 export default function TopNavigation() {
@@ -25,6 +26,7 @@ export default function TopNavigation() {
     const navigate = useNavigate();
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
     // Live search state
     const [searchQuery, setSearchQuery] = useState("");
@@ -179,24 +181,6 @@ export default function TopNavigation() {
                                     Overview
                                 </Link>
                                 <Link
-                                    to="/questionbank"
-                                    className={`wf-nav-item ${path === "/questionbank" ? "active" : ""}`}
-                                >
-                                    Question bank
-                                </Link>
-                                <Link
-                                    to="/admin/ai-tools"
-                                    className={`wf-nav-item ${path.startsWith("/admin/ai-tools") || path.startsWith("/aigenerator") ? "active" : ""}`}
-                                >
-                                    AI tools
-                                </Link>
-                                <Link
-                                    to="/roles"
-                                    className={`wf-nav-item ${path === "/roles" ? "active" : ""}`}
-                                >
-                                    Roles & taxonomy
-                                </Link>
-                                <Link
                                     to="/candidate-data"
                                     className={`wf-nav-item ${path === "/candidate-data" || path === "/admin/candidates" ? "active" : ""}`}
                                 >
@@ -208,53 +192,66 @@ export default function TopNavigation() {
                                 >
                                     Exam batches
                                 </Link>
+                                <Link
+                                    to="/questionbank"
+                                    className={`wf-nav-item ${path === "/questionbank" ? "active" : ""}`}
+                                >
+                                    Question bank
+                                </Link>
+                                <Link
+                                    to="/roles"
+                                    className={`wf-nav-item ${path === "/roles" ? "active" : ""}`}
+                                >
+                                    Roles
+                                </Link>
 
-                                {/* More Dropdown */}
+                                {/* More Dropdown with Tools, Reports, Account */}
                                 <div className="position-relative" ref={moreMenuRef}>
                                     <button
                                         type="button"
                                         className={`wf-nav-item wf-dropdown-toggle ${moreMenuOpen ? "active" : ""}`}
                                         onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                                        aria-expanded={moreMenuOpen}
                                     >
-                                        More ▾
+                                        More <ChevronDown size={13} style={{ marginLeft: "2px" }} />
                                     </button>
                                     {moreMenuOpen && (
-                                        <div className="wf-menu-dropdown">
+                                        <div className="wf-menu-dropdown" style={{ minWidth: "200px" }}>
+                                            <div className="wf-menu-section-label">Tools</div>
                                             <Link
-                                                to="/admin/batches/new"
+                                                to="/admin/ai-tools"
                                                 className="wf-menu-item"
                                                 onClick={() => setMoreMenuOpen(false)}
                                             >
-                                                + New Exam Batch
-                                            </Link>
-                                            <Link
-                                                to="/admin/candidates/add"
-                                                className="wf-menu-item"
-                                                onClick={() => setMoreMenuOpen(false)}
-                                            >
-                                                Register candidates
-                                            </Link>
-                                            <Link
-                                                to="/admin-analytics"
-                                                className="wf-menu-item"
-                                                onClick={() => setMoreMenuOpen(false)}
-                                            >
-                                                System Analytics
-                                            </Link>
-                                            <Link
-                                                to="/admin-results"
-                                                className="wf-menu-item"
-                                                onClick={() => setMoreMenuOpen(false)}
-                                            >
-                                                All Exam Results
+                                                AI tools
                                             </Link>
                                             <Link
                                                 to="/codeforces"
                                                 className="wf-menu-item"
                                                 onClick={() => setMoreMenuOpen(false)}
                                             >
-                                                Codeforces Importer
+                                                Codeforces importer
                                             </Link>
+
+                                            <div className="wf-menu-divider" />
+                                            <div className="wf-menu-section-label">Reports</div>
+                                            <Link
+                                                to="/admin-analytics"
+                                                className="wf-menu-item"
+                                                onClick={() => setMoreMenuOpen(false)}
+                                            >
+                                                System analytics
+                                            </Link>
+                                            <Link
+                                                to="/admin-results"
+                                                className="wf-menu-item"
+                                                onClick={() => setMoreMenuOpen(false)}
+                                            >
+                                                All exam results
+                                            </Link>
+
+                                            <div className="wf-menu-divider" />
+                                            <div className="wf-menu-section-label">Account</div>
                                             <Link
                                                 to="/settings"
                                                 className="wf-menu-item"
@@ -640,8 +637,69 @@ export default function TopNavigation() {
                             </div>
                         )}
                     </div>
+
+                    {/* Mobile Hamburger Toggle for <1024px */}
+                    <button
+                        type="button"
+                        className="wf-mobile-nav-toggle"
+                        onClick={() => setMobileNavOpen(!mobileNavOpen)}
+                        aria-label="Toggle navigation menu"
+                    >
+                        {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+                    </button>
                 </div>
             </div>
+
+            {/* Mobile Nav Drawer (<1024px) */}
+            {mobileNavOpen && (
+                <div style={{
+                    borderTop: "1px solid #e2e8f0",
+                    backgroundColor: "#ffffff",
+                    padding: "12px 24px 20px 24px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px"
+                }}>
+                    {isAdminMode ? (
+                        <>
+                            <Link to="/admin-dashboard" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Overview</Link>
+                            <Link to="/candidate-data" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Candidates</Link>
+                            <Link to="/admin/batches" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Exam batches</Link>
+                            <Link to="/questionbank" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Question bank</Link>
+                            <Link to="/roles" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Roles</Link>
+                            <div className="wf-menu-divider" />
+                            <div className="wf-menu-section-label">Tools</div>
+                            <Link to="/admin/ai-tools" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>AI tools</Link>
+                            <Link to="/codeforces" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Codeforces importer</Link>
+                            <div className="wf-menu-divider" />
+                            <div className="wf-menu-section-label">Reports</div>
+                            <Link to="/admin-analytics" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>System analytics</Link>
+                            <Link to="/admin-results" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>All exam results</Link>
+                            <div className="wf-menu-divider" />
+                            <div className="wf-menu-section-label">Account</div>
+                            <Link to="/settings" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Settings</Link>
+                            <button
+                                type="button"
+                                className="wf-menu-item"
+                                style={{ width: "100%", textAlign: "left", background: "none", border: "none", color: "#dc2626", cursor: "pointer" }}
+                                onClick={() => {
+                                    setMobileNavOpen(false);
+                                    localStorage.clear();
+                                    navigate("/login");
+                                }}
+                            >
+                                Log out
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <Link to="/dashboard" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Home</Link>
+                            <Link to="/practice" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Practice</Link>
+                            <Link to="/prepare" className="wf-menu-item" onClick={() => setMobileNavOpen(false)}>Prepare with AI</Link>
+                        </>
+                    )}
+                </div>
+            )}
         </header>
     );
 }

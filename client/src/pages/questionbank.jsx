@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { ChevronDown, Plus } from "lucide-react";
 import api from "../utils/api";
 
 export default function QuestionBank() {
@@ -11,8 +12,10 @@ export default function QuestionBank() {
     const [dbTotalQuestions, setDbTotalQuestions] = useState(0);
     const [otherQuestionsCount, setOtherQuestionsCount] = useState(0);
     const [selectedRole, setSelectedRole] = useState("all");
+    const [showAllRoles, setShowAllRoles] = useState(false);
+    const [showEmptyRoles, setShowEmptyRoles] = useState(false);
 
-    // Questions State (Server-side paginated)
+    // Questions State (Server-side paginated at 20 rows)
     const [questions, setQuestions] = useState([]);
     const [totalQuestions, setTotalQuestions] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
@@ -21,6 +24,8 @@ export default function QuestionBank() {
 
     // Selected Question for Detail View
     const [selectedQuestion, setSelectedQuestion] = useState(null);
+    const [showReferenceAnswer, setShowReferenceAnswer] = useState(false);
+    const [showKeyPoints, setShowKeyPoints] = useState(false);
 
     // Filters & Search
     const [searchTerm, setSearchTerm] = useState("");
@@ -95,7 +100,7 @@ export default function QuestionBank() {
             if (difficultyFilter !== "all") params.append("difficulty", difficultyFilter);
             if (searchTerm.trim()) params.append("search", searchTerm.trim());
             params.append("page", currentPage);
-            params.append("limit", 15);
+            params.append("limit", 20);
 
             const res = await api.get(`/question?${params.toString()}`);
             const data = res.data;
@@ -104,13 +109,12 @@ export default function QuestionBank() {
                 setQuestions(data);
                 setTotalQuestions(data.length);
                 setTotalPages(1);
-                setSelectedQuestion(data.length > 0 ? data[0] : null);
+                setSelectedQuestion(prev => prev ? data.find(q => q._id === prev._id) || null : null);
             } else if (data && Array.isArray(data.questions)) {
                 setQuestions(data.questions);
                 setTotalQuestions(data.total || 0);
                 setTotalPages(data.totalPages || 1);
-                const matched = data.questions.find(q => selectedQuestion && q._id === selectedQuestion._id);
-                setSelectedQuestion(matched || (data.questions.length > 0 ? data.questions[0] : null));
+                setSelectedQuestion(prev => prev ? data.questions.find(q => q._id === prev._id) || null : null);
             } else {
                 setQuestions([]);
                 setTotalQuestions(0);
@@ -130,6 +134,8 @@ export default function QuestionBank() {
         setSelectedRole(roleKey);
         setCurrentPage(1);
         setSelectedQuestion(null);
+        setShowReferenceAnswer(false);
+        setShowKeyPoints(false);
         setSelectedIds(new Set());
     };
 
@@ -143,6 +149,17 @@ export default function QuestionBank() {
         const matched = roles.find(r => r.title.toLowerCase() === selectedRole.toLowerCase());
         return matched ? (matched.questions ?? matched.questionCount ?? 0) : 0;
     }, [selectedRole, roles, dbTotalQuestions, otherQuestionsCount]);
+
+    // Active role folders with counts (collapsed to top 6 by default, filterable by non-empty)
+    const activeRoles = useMemo(() => {
+        let list = roles;
+        if (!showEmptyRoles) {
+            list = list.filter(r => (r.questions ?? r.questionCount ?? 0) > 0);
+        }
+        return list;
+    }, [roles, showEmptyRoles]);
+
+    const displayedRoles = showAllRoles ? activeRoles : activeRoles.slice(0, 6);
 
     const hasActiveFilters = Boolean(
         searchTerm.trim() || statusFilter !== "all" || difficultyFilter !== "all"
@@ -547,8 +564,18 @@ export default function QuestionBank() {
             <div style={{ display: "grid", gridTemplateColumns: "240px 1.4fr 1fr", gap: "20px", alignItems: "start" }}>
                 {/* 1. Left Column: Role Folders */}
                 <div className="wf-card" style={{ padding: "16px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
-                        ROLE CURRICULA
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                            Role curricula
+                        </span>
+                        <label style={{ fontSize: "11px", color: "#64748b", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", userSelect: "none" }}>
+                            <input
+                                type="checkbox"
+                                checked={showEmptyRoles}
+                                onChange={(e) => setShowEmptyRoles(e.target.checked)}
+                            />
+                            <span>Show empty</span>
+                        </label>
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -559,11 +586,11 @@ export default function QuestionBank() {
                                 display: "flex",
                                 justifyContent: "space-between",
                                 alignItems: "center",
-                                padding: "10px 12px",
+                                padding: "9px 12px",
                                 borderRadius: "8px",
                                 border: "none",
-                                backgroundColor: selectedRole === "all" ? "#f0f7ff" : "transparent",
-                                color: selectedRole === "all" ? "#1e40af" : "#374151",
+                                backgroundColor: selectedRole === "all" ? "#f0fdf4" : "transparent",
+                                color: selectedRole === "all" ? "#166534" : "#334155",
                                 fontWeight: selectedRole === "all" ? "700" : "500",
                                 fontSize: "13px",
                                 textAlign: "left",
@@ -571,12 +598,12 @@ export default function QuestionBank() {
                             }}
                         >
                             <span>📁 All Roles</span>
-                            <span style={{ fontSize: "11px", color: "#6b7280", backgroundColor: "#e2e8f0", padding: "2px 6px", borderRadius: "10px" }}>
+                            <span style={{ fontSize: "11px", color: "#64748b", backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: "10px" }}>
                                 {dbTotalQuestions || (roles.reduce((sum, r) => sum + (r.questions || r.questionCount || 0), 0) + otherQuestionsCount)}
                             </span>
                         </button>
 
-                        {roles.map(r => (
+                        {displayedRoles.map(r => (
                             <button
                                 key={r._id || r.title}
                                 type="button"
@@ -585,11 +612,11 @@ export default function QuestionBank() {
                                     display: "flex",
                                     justifyContent: "space-between",
                                     alignItems: "center",
-                                    padding: "10px 12px",
+                                    padding: "9px 12px",
                                     borderRadius: "8px",
                                     border: "none",
-                                    backgroundColor: selectedRole.toLowerCase() === r.title.toLowerCase() ? "#f0f7ff" : "transparent",
-                                    color: selectedRole.toLowerCase() === r.title.toLowerCase() ? "#1e40af" : "#374151",
+                                    backgroundColor: selectedRole.toLowerCase() === r.title.toLowerCase() ? "#f0fdf4" : "transparent",
+                                    color: selectedRole.toLowerCase() === r.title.toLowerCase() ? "#166534" : "#334155",
                                     fontWeight: selectedRole.toLowerCase() === r.title.toLowerCase() ? "700" : "500",
                                     fontSize: "13px",
                                     textAlign: "left",
@@ -599,43 +626,68 @@ export default function QuestionBank() {
                                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: "6px" }}>
                                     {r.title}
                                 </span>
-                                <span style={{ fontSize: "11px", color: "#6b7280", backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: "10px" }}>
+                                <span style={{ fontSize: "11px", color: "#64748b", backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: "10px" }}>
                                     {r.questions ?? r.questionCount ?? 0}
                                 </span>
                             </button>
                         ))}
 
-                        <button
-                            type="button"
-                            onClick={() => handleSelectRole("other")}
-                            style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "10px 12px",
-                                borderRadius: "8px",
-                                border: "none",
-                                backgroundColor: selectedRole === "other" ? "#f0f7ff" : "transparent",
-                                color: selectedRole === "other" ? "#1e40af" : "#374151",
-                                fontWeight: selectedRole === "other" ? "700" : "500",
-                                fontSize: "13px",
-                                textAlign: "left",
-                                cursor: "pointer"
-                            }}
-                        >
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: "6px" }}>
-                                📁 Other / Uncategorized
-                            </span>
-                            <span style={{ fontSize: "11px", color: "#6b7280", backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: "10px" }}>
-                                {otherQuestionsCount}
-                            </span>
-                        </button>
+                        {activeRoles.length > 6 && (
+                            <button
+                                type="button"
+                                onClick={() => setShowAllRoles(!showAllRoles)}
+                                style={{
+                                    padding: "6px 12px",
+                                    border: "none",
+                                    background: "none",
+                                    color: "#2563eb",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    textAlign: "left",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                {showAllRoles ? "Show fewer roles" : `Show all (${activeRoles.length})`}
+                            </button>
+                        )}
+
+                        <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #f1f5f9" }}>
+                            <button
+                                type="button"
+                                onClick={() => handleSelectRole("other")}
+                                style={{
+                                    width: "100%",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "9px 12px",
+                                    borderRadius: "8px",
+                                    border: "none",
+                                    backgroundColor: selectedRole === "other" ? "#f0fdf4" : "transparent",
+                                    color: selectedRole === "other" ? "#166534" : "#334155",
+                                    fontWeight: selectedRole === "other" ? "700" : "500",
+                                    fontSize: "13px",
+                                    textAlign: "left",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: "6px" }}>
+                                    📁 Other / uncategorized
+                                </span>
+                                <span style={{ fontSize: "11px", color: "#64748b", backgroundColor: "#f1f5f9", padding: "2px 6px", borderRadius: "10px" }}>
+                                    {otherQuestionsCount}
+                                </span>
+                            </button>
+                            <div style={{ fontSize: "11px", color: "#64748b", padding: "4px 12px 8px 12px", lineHeight: "1.35" }}>
+                                Questions without a role assigned. Assign a role to move them.
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                {/* 2. Center Column: Filters & Questions Table */}
+                {/* 2. Center Column: Filters & 3-Column Questions Table */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {/* Search & Filter Bar */}
+                    {/* Search & Filter Bar: single row */}
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                         <input
                             type="text"
@@ -643,14 +695,14 @@ export default function QuestionBank() {
                             value={searchTerm}
                             onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
                             className="wf-input"
-                            style={{ flex: 1, minWidth: "200px" }}
+                            style={{ flex: 1, minWidth: "180px" }}
                         />
 
                         <select
                             value={statusFilter}
                             onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                             className="wf-input"
-                            style={{ width: "auto", minWidth: "120px", backgroundColor: "#ffffff" }}
+                            style={{ width: "auto", minWidth: "110px", backgroundColor: "#ffffff" }}
                         >
                             <option value="all">All Status</option>
                             <option value="pending">Pending</option>
@@ -662,7 +714,7 @@ export default function QuestionBank() {
                             value={difficultyFilter}
                             onChange={(e) => { setDifficultyFilter(e.target.value); setCurrentPage(1); }}
                             className="wf-input"
-                            style={{ width: "auto", minWidth: "120px", backgroundColor: "#ffffff" }}
+                            style={{ width: "auto", minWidth: "110px", backgroundColor: "#ffffff" }}
                         >
                             <option value="all">All Difficulty</option>
                             <option value="easy">Easy</option>
@@ -671,120 +723,115 @@ export default function QuestionBank() {
                         </select>
                     </div>
 
-                    {/* Table Card */}
+                    {/* Table Card (3 Columns: Question, Difficulty, Status) */}
                     <div className="wf-card" style={{ padding: 0, overflow: "hidden" }}>
                         {loading ? (
-                            <div style={{ padding: "40px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                            <div style={{ padding: "40px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
                                 Loading question repository...
                             </div>
                         ) : questions.length === 0 ? (
-                            <div style={{ padding: "40px 20px", textAlign: "center" }}>
-                                <div style={{ fontSize: "28px", marginBottom: "8px" }}>📋</div>
-                                <div style={{ fontSize: "14px", fontWeight: "700", color: "#111827", marginBottom: "4px" }}>
-                                    No questions found
+                            <div style={{ padding: "48px 20px", textAlign: "center" }}>
+                                <div style={{ fontSize: "14px", fontWeight: "600", color: "#0f172a", marginBottom: "4px" }}>
+                                    {selectedRole !== "all" && selectedRole !== "other"
+                                        ? `No questions in ${selectedRole} yet.`
+                                        : "No questions found"}
                                 </div>
-                                <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "14px" }}>
-                                    Try adjusting your filters or add a new question to this track.
+                                <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "16px" }}>
+                                    {selectedRole !== "all" && selectedRole !== "other"
+                                        ? "Create the first question for this role or import from other sources."
+                                        : "Try adjusting your search criteria or add a question."}
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => setAddModalOpen(true)}
+                                    onClick={() => {
+                                        if (selectedRole !== "all" && selectedRole !== "other") {
+                                            setNewRole(selectedRole);
+                                        }
+                                        setAddModalOpen(true);
+                                    }}
                                     className="wf-btn-primary"
-                                    style={{ fontSize: "12px", padding: "7px 14px" }}
+                                    style={{ fontSize: "12px", padding: "7px 16px" }}
                                 >
                                     + Add Question
                                 </button>
                             </div>
                         ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                                <thead>
-                                    <tr style={{ borderBottom: "1.5px solid #e5e7eb", backgroundColor: "#f9fafb", textAlign: "left", color: "#6b7280", fontSize: "11px", textTransform: "uppercase" }}>
-                                        <th style={{ padding: "10px 14px", width: "36px" }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedIds.size === questions.length && questions.length > 0}
-                                                onChange={toggleSelectAll}
-                                            />
-                                        </th>
-                                        <th style={{ padding: "10px 12px" }}>Question</th>
-                                        <th style={{ padding: "10px 12px" }}>Domain</th>
-                                        <th style={{ padding: "10px 12px" }}>Difficulty</th>
-                                        <th style={{ padding: "10px 12px" }}>Status</th>
-                                        <th style={{ padding: "10px 12px" }}>Type</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {questions.map(q => {
-                                        const isSelected = selectedQuestion?._id === q._id;
-                                        const isChecked = selectedIds.has(q._id);
-                                        const status = (q.status || "approved").toLowerCase();
+                            <div style={{ overflowX: "auto" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: "1.5px solid #e2e8f0", backgroundColor: "#f8fafc", textAlign: "left", color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>
+                                            <th style={{ padding: "10px 14px" }}>Question</th>
+                                            <th style={{ padding: "10px 12px", width: "100px" }}>Difficulty</th>
+                                            <th style={{ padding: "10px 14px", width: "100px" }}>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {questions.map(q => {
+                                            const isSelected = selectedQuestion?._id === q._id;
+                                            const status = (q.status || "approved").toLowerCase();
 
-                                        return (
-                                            <tr
-                                                key={q._id}
-                                                onClick={() => setSelectedQuestion(q)}
-                                                style={{
-                                                    borderBottom: "1px solid #f3f4f6",
-                                                    cursor: "pointer",
-                                                    backgroundColor: isSelected ? "#f0f7ff" : isChecked ? "#fefce8" : "#ffffff",
-                                                    transition: "background-color 0.1s ease"
-                                                }}
-                                            >
-                                                <td style={{ padding: "10px 14px" }} onClick={(e) => toggleSelectRow(q._id, e)}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={(e) => toggleSelectRow(q._id, e)}
-                                                    />
-                                                </td>
-                                                <td style={{ padding: "10px 12px", maxWidth: "260px" }}>
-                                                    <div style={{
-                                                        fontWeight: "600",
-                                                        color: "#111827",
-                                                        overflow: "hidden",
-                                                        textOverflow: "ellipsis",
-                                                        whiteSpace: "nowrap"
-                                                    }}>
-                                                        {q.questionText}
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: "10px 12px", color: "#4b5563", fontSize: "12px" }}>
-                                                    {q.domain}
-                                                </td>
-                                                <td style={{ padding: "10px 12px" }}>
-                                                    <span style={{
-                                                        fontSize: "11px",
-                                                        fontWeight: "600",
-                                                        color: q.difficulty === "hard" ? "#991b1b" : q.difficulty === "medium" ? "#92400e" : "#065f46"
-                                                    }}>
-                                                        {(q.difficulty || "medium").toUpperCase()}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: "10px 12px" }}>
-                                                    <span style={{
-                                                        padding: "3px 8px",
-                                                        borderRadius: "4px",
-                                                        fontSize: "11px",
-                                                        fontWeight: "700",
-                                                        backgroundColor: status === "approved" ? "#ecfdf5" : status === "pending" ? "#fef3c7" : "#fee2e2",
-                                                        color: status === "approved" ? "#065f46" : status === "pending" ? "#92400e" : "#991b1b"
-                                                    }}>
-                                                        {status.toUpperCase()}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: "10px 12px", color: "#6b7280", fontSize: "12px" }}>
-                                                    {q.assessmentType || (q.type === "coding" ? "Coding" : "Theory")}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                                            return (
+                                                <tr
+                                                    key={q._id}
+                                                    onClick={() => {
+                                                        setSelectedQuestion(q);
+                                                        setShowReferenceAnswer(false);
+                                                        setShowKeyPoints(false);
+                                                    }}
+                                                    style={{
+                                                        borderBottom: "1px solid #f1f5f9",
+                                                        cursor: "pointer",
+                                                        backgroundColor: isSelected ? "#f0fdf4" : "#ffffff",
+                                                        transition: "background-color 0.1s ease"
+                                                    }}
+                                                >
+                                                    <td style={{ padding: "12px 14px", maxWidth: "340px" }}>
+                                                        <div style={{
+                                                            fontWeight: "600",
+                                                            color: "#0f172a",
+                                                            overflow: "hidden",
+                                                            textOverflow: "ellipsis",
+                                                            whiteSpace: "nowrap",
+                                                            marginBottom: "3px"
+                                                        }}>
+                                                            {q.questionText}
+                                                        </div>
+                                                        <div style={{ fontSize: "11.5px", color: "#64748b" }}>
+                                                            {q.domain || q.role || "General"} · {q.assessmentType || (q.type === "coding" ? "Coding" : "Theory")}
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: "12px 12px" }}>
+                                                        <span style={{
+                                                            fontSize: "11px",
+                                                            fontWeight: "600",
+                                                            color: q.difficulty === "hard" ? "#991b1b" : q.difficulty === "medium" ? "#92400e" : "#065f46"
+                                                        }}>
+                                                            {(q.difficulty || "medium").toUpperCase()}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: "12px 14px" }}>
+                                                        <span style={{
+                                                            padding: "3px 8px",
+                                                            borderRadius: "4px",
+                                                            fontSize: "10.5px",
+                                                            fontWeight: "700",
+                                                            backgroundColor: status === "approved" ? "#ecfdf5" : status === "pending" ? "#fef3c7" : "#fee2e2",
+                                                            color: status === "approved" ? "#065f46" : status === "pending" ? "#92400e" : "#991b1b"
+                                                        }}>
+                                                            {status.toUpperCase()}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         )}
 
-                        {/* Pagination footer */}
+                        {/* Pagination footer (20 rows) */}
                         {!loading && questions.length > 0 && (
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderTop: "1px solid #e5e7eb", fontSize: "12px", color: "#6b7280" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderTop: "1px solid #e2e8f0", fontSize: "12px", color: "#64748b" }}>
                                 <div>
                                     {hasActiveFilters
                                         ? `Showing ${totalQuestions} of ${activeFolderCount} questions`
@@ -800,7 +847,7 @@ export default function QuestionBank() {
                                     >
                                         Prev
                                     </button>
-                                    <span style={{ fontWeight: "700", color: "#111827" }}>
+                                    <span style={{ fontWeight: "700", color: "#0f172a" }}>
                                         {currentPage} / {totalPages}
                                     </span>
                                     <button
@@ -820,18 +867,17 @@ export default function QuestionBank() {
 
                 {/* 3. Right Column: Detailed Question Panel */}
                 <div className="wf-card" style={{ padding: "20px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
-                        QUESTION INSPECTION
+                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+                        Question detail
                     </div>
 
                     {!selectedQuestion ? (
-                        <div style={{ padding: "40px 16px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
-                            <div style={{ fontSize: "24px", marginBottom: "8px" }}>🔍</div>
-                            <div style={{ fontWeight: "600", color: "#4b5563", marginBottom: "4px" }}>
-                                Select a question to inspect
+                        <div style={{ padding: "48px 16px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
+                            <div style={{ fontWeight: "600", color: "#0f172a", marginBottom: "4px" }}>
+                                Select a question to review
                             </div>
-                            <div style={{ fontSize: "12px", color: "#9ca3af" }}>
-                                Choose any question from the catalog list to inspect its ideal answer, scoring rubric, and validation actions.
+                            <div style={{ fontSize: "12px", color: "#64748b" }}>
+                                Choose any question from the catalog list to inspect its metadata, scoring criteria, and approval actions.
                             </div>
                         </div>
                     ) : (
@@ -850,109 +896,128 @@ export default function QuestionBank() {
                                 </span>
 
                                 {selectedQuestion.isAIGenerated && (
-                                    <span style={{ fontSize: "11px", backgroundColor: "#eff6ff", color: "#1d4ed8", padding: "2px 6px", borderRadius: "4px", fontWeight: "600" }}>
-                                        ✨ AI Calibrated
+                                    <span style={{ fontSize: "11px", backgroundColor: "#f0fdf4", color: "#166534", padding: "2px 6px", borderRadius: "4px", fontWeight: "600" }}>
+                                        AI Calibrated
                                     </span>
                                 )}
                             </div>
 
-                            <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#111827", lineHeight: "1.4", margin: "0 0 16px 0" }}>
+                            <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a", lineHeight: "1.4", margin: "0 0 16px 0" }}>
                                 {selectedQuestion.questionText}
                             </h3>
 
                             {/* Attributes Grid */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px", fontSize: "12px" }}>
-                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
-                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Role Track</div>
-                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.role}</div>
+                                <div style={{ padding: "8px", backgroundColor: "#f8fafc", borderRadius: "6px" }}>
+                                    <div style={{ color: "#64748b", marginBottom: "2px" }}>Role Track</div>
+                                    <div style={{ fontWeight: "600", color: "#0f172a" }}>{selectedQuestion.role}</div>
                                 </div>
-                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
-                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Domain</div>
-                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.domain}</div>
+                                <div style={{ padding: "8px", backgroundColor: "#f8fafc", borderRadius: "6px" }}>
+                                    <div style={{ color: "#64748b", marginBottom: "2px" }}>Domain</div>
+                                    <div style={{ fontWeight: "600", color: "#0f172a" }}>{selectedQuestion.domain}</div>
                                 </div>
-                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
-                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Format</div>
-                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.assessmentType || "Theory"}</div>
+                                <div style={{ padding: "8px", backgroundColor: "#f8fafc", borderRadius: "6px" }}>
+                                    <div style={{ color: "#64748b", marginBottom: "2px" }}>Format</div>
+                                    <div style={{ fontWeight: "600", color: "#0f172a" }}>{selectedQuestion.assessmentType || "Theory"}</div>
                                 </div>
-                                <div style={{ padding: "8px", backgroundColor: "#f9fafb", borderRadius: "6px" }}>
-                                    <div style={{ color: "#6b7280", marginBottom: "2px" }}>Time Limit</div>
-                                    <div style={{ fontWeight: "600", color: "#111827" }}>{selectedQuestion.timeLimit || 180}s ({selectedQuestion.maxscore || 10} pts)</div>
+                                <div style={{ padding: "8px", backgroundColor: "#f8fafc", borderRadius: "6px" }}>
+                                    <div style={{ color: "#64748b", marginBottom: "2px" }}>Time Limit</div>
+                                    <div style={{ fontWeight: "600", color: "#0f172a" }}>{selectedQuestion.timeLimit || 180}s ({selectedQuestion.maxscore || 10} pts)</div>
                                 </div>
                             </div>
 
-                            {/* Key Points Chips */}
+                            {/* Collapsed Key Points Toggle */}
                             {selectedQuestion.keypoint && selectedQuestion.keypoint.length > 0 && (
-                                <div style={{ marginBottom: "16px" }}>
-                                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#4b5563", marginBottom: "6px", textTransform: "uppercase" }}>
-                                        Expected Key Points
-                                    </div>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                                        {selectedQuestion.keypoint.map((kp, idx) => (
-                                            <span key={idx} style={{ backgroundColor: "#f3f4f6", color: "#374151", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>
-                                                • {kp}
-                                            </span>
-                                        ))}
-                                    </div>
+                                <div style={{ marginBottom: "12px" }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowKeyPoints(!showKeyPoints)}
+                                        style={{
+                                            background: "none",
+                                            border: "none",
+                                            padding: 0,
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            color: "#2563eb",
+                                            cursor: "pointer",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "4px"
+                                        }}
+                                    >
+                                        <span>{showKeyPoints ? "Hide key points" : "Show key points"}</span>
+                                        <ChevronDown size={14} style={{ transform: showKeyPoints ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                                    </button>
+                                    {showKeyPoints && (
+                                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+                                            {selectedQuestion.keypoint.map((kp, idx) => (
+                                                <span key={idx} style={{ backgroundColor: "#f1f5f9", color: "#334155", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>
+                                                    • {kp}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
-                            {/* Ideal Reference Answer */}
-                            <div style={{ marginBottom: "20px" }}>
-                                <div style={{ fontSize: "11px", fontWeight: "700", color: "#4b5563", marginBottom: "6px", textTransform: "uppercase" }}>
-                                    Ideal Reference Answer
-                                </div>
-                                <div style={{
-                                    fontSize: "12px",
-                                    lineHeight: "1.5",
-                                    color: "#374151",
-                                    backgroundColor: "#f9fafb",
-                                    padding: "10px 12px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #f3f4f6",
-                                    maxHeight: "140px",
-                                    overflowY: "auto"
-                                }}>
-                                    {selectedQuestion.idealAnswer || "No ideal answer provided."}
-                                </div>
+                            {/* Collapsed Reference Answer Toggle */}
+                            <div style={{ marginBottom: "16px" }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowReferenceAnswer(!showReferenceAnswer)}
+                                    style={{
+                                        background: "none",
+                                        border: "none",
+                                        padding: 0,
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                        color: "#2563eb",
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "4px"
+                                    }}
+                                >
+                                    <span>{showReferenceAnswer ? "Hide reference answer" : "Show reference answer"}</span>
+                                    <ChevronDown size={14} style={{ transform: showReferenceAnswer ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                                </button>
+                                {showReferenceAnswer && (
+                                    <div style={{
+                                        marginTop: "8px",
+                                        fontSize: "12px",
+                                        lineHeight: "1.5",
+                                        color: "#334155",
+                                        backgroundColor: "#f8fafc",
+                                        padding: "10px 12px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #f1f5f9",
+                                        maxHeight: "150px",
+                                        overflowY: "auto"
+                                    }}>
+                                        {selectedQuestion.idealAnswer || "No reference answer provided."}
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Action Buttons: Status-aware Approve, Reject, Edit, Delete */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                            {/* Status-matching Action Buttons */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingTop: "14px", borderTop: "1px solid #f1f5f9" }}>
                                 {(!selectedQuestion.status || selectedQuestion.status === "pending") && (
                                     <div style={{ display: "flex", gap: "8px" }}>
                                         <button
                                             type="button"
                                             onClick={() => handleApprove(selectedQuestion)}
-                                            style={{
-                                                flex: 1,
-                                                padding: "8px",
-                                                backgroundColor: "#059669",
-                                                color: "#ffffff",
-                                                border: "none",
-                                                borderRadius: "6px",
-                                                fontSize: "12px",
-                                                fontWeight: "600",
-                                                cursor: "pointer"
-                                            }}
+                                            className="wf-btn-primary"
+                                            style={{ flex: 1, padding: "8px", fontSize: "12px", justifyContent: "center" }}
                                         >
-                                            ✓ Approve
+                                            Approve
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => handleReject(selectedQuestion)}
-                                            style={{
-                                                flex: 1,
-                                                padding: "8px",
-                                                backgroundColor: "#d97706",
-                                                color: "#ffffff",
-                                                border: "none",
-                                                borderRadius: "6px",
-                                                fontSize: "12px",
-                                                fontWeight: "600",
-                                                cursor: "pointer"
-                                            }}
+                                            className="wf-btn-outline"
+                                            style={{ flex: 1, padding: "8px", fontSize: "12px", justifyContent: "center" }}
                                         >
-                                            ✕ Reject
+                                            Reject
                                         </button>
                                     </div>
                                 )}
@@ -970,11 +1035,10 @@ export default function QuestionBank() {
                                             borderRadius: "6px",
                                             fontSize: "12px",
                                             fontWeight: "600",
-                                            cursor: "pointer",
-                                            transition: "all 0.15s ease"
+                                            cursor: "pointer"
                                         }}
                                     >
-                                        ✕ Revoke / Reject
+                                        Revoke
                                     </button>
                                 )}
 
@@ -982,52 +1046,41 @@ export default function QuestionBank() {
                                     <button
                                         type="button"
                                         onClick={() => handleApprove(selectedQuestion)}
-                                        style={{
-                                            width: "100%",
-                                            padding: "8px",
-                                            backgroundColor: "#ecfdf5",
-                                            color: "#065f46",
-                                            border: "1px solid #a7f3d0",
-                                            borderRadius: "6px",
-                                            fontSize: "12px",
-                                            fontWeight: "600",
-                                            cursor: "pointer",
-                                            transition: "all 0.15s ease"
-                                        }}
+                                        className="wf-btn-primary"
+                                        style={{ width: "100%", padding: "8px", fontSize: "12px", justifyContent: "center" }}
                                     >
-                                        ✓ Restore & approve
+                                        Restore
                                     </button>
                                 )}
 
-                                <div style={{ display: "flex", gap: "8px" }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleOpenEditModal(selectedQuestion)}
-                                        className="wf-btn-outline"
-                                        style={{ flex: 1, padding: "7px", fontSize: "12px" }}
-                                    >
-                                        Edit Details
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setQuestionToDelete(selectedQuestion);
-                                            setDeleteModalOpen(true);
-                                        }}
-                                        style={{
-                                            padding: "7px 12px",
-                                            backgroundColor: "#fef2f2",
-                                            color: "#dc2626",
-                                            border: "1px solid #fecaca",
-                                            borderRadius: "6px",
-                                            fontSize: "12px",
-                                            fontWeight: "600",
-                                            cursor: "pointer"
-                                        }}
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleOpenEditModal(selectedQuestion)}
+                                    className="wf-btn-outline"
+                                    style={{ width: "100%", padding: "7px", fontSize: "12px", textAlign: "center" }}
+                                >
+                                    Edit
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setQuestionToDelete(selectedQuestion);
+                                        setDeleteModalOpen(true);
+                                    }}
+                                    style={{
+                                        background: "none",
+                                        border: "none",
+                                        color: "#dc2626",
+                                        fontSize: "12px",
+                                        cursor: "pointer",
+                                        textDecoration: "underline",
+                                        alignSelf: "center",
+                                        marginTop: "4px"
+                                    }}
+                                >
+                                    Delete
+                                </button>
                             </div>
                         </div>
                     )}

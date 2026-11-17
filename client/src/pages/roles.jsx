@@ -348,126 +348,88 @@ export default function Roles() {
                             </button>
                         </div>
                     ) : (
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                            <thead>
-                                <tr style={{ borderBottom: "1.5px solid #e5e7eb", backgroundColor: "#f9fafb", textAlign: "left", color: "#6b7280", fontSize: "11px", textTransform: "uppercase" }}>
-                                    <th style={{ padding: "10px 14px" }}>Role Track</th>
-                                    <th style={{ padding: "10px 14px" }}>Domains</th>
-                                    <th style={{ padding: "10px 14px" }}>Questions</th>
-                                    <th style={{ padding: "10px 14px" }}>Status</th>
-                                    <th style={{ padding: "10px 14px", textAlign: "right" }}>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredRoles.map(r => {
-                                    const isSelected = selectedRole?._id === r._id;
-                                    const qCount = r.questions ?? r.questionCount ?? 0;
-                                    const status = r.status || "Active";
+                        <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                                <thead>
+                                    <tr style={{ borderBottom: "1.5px solid #e2e8f0", backgroundColor: "#f8fafc", textAlign: "left", color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>
+                                        <th style={{ padding: "10px 14px" }}>Role</th>
+                                        <th style={{ padding: "10px 14px", width: "110px" }}>Questions</th>
+                                        <th style={{ padding: "10px 14px", width: "100px" }}>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredRoles.map(r => {
+                                        const isSelected = selectedRole?._id === r._id;
+                                        const qCount = r.questions ?? r.questionCount ?? 0;
+                                        const status = r.status || "Active";
 
-                                    return (
-                                        <tr
-                                            key={r._id}
-                                            onClick={() => setSelectedRole(r)}
-                                            style={{
-                                                borderBottom: "1px solid #f3f4f6",
-                                                cursor: "pointer",
-                                                backgroundColor: isSelected ? "#f0f7ff" : "transparent",
-                                                transition: "background-color 0.1s ease"
-                                            }}
-                                        >
-                                            <td style={{ padding: "12px 14px" }}>
-                                                <div style={{ fontWeight: "700", color: "#111827" }}>{r.title}</div>
-                                                <div style={{ fontSize: "11px", color: "#6b7280", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                    {r.description || "No description provided."}
-                                                </div>
-                                            </td>
-                                            <td style={{ padding: "12px 14px" }}>
-                                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", maxWidth: "220px" }}>
-                                                    {(r.domains || ["General"]).slice(0, 3).map((d, idx) => (
-                                                        <span key={idx} style={{ backgroundColor: "#f3f4f6", color: "#374151", padding: "1px 6px", borderRadius: "4px", fontSize: "10.5px" }}>
-                                                            {d}
-                                                        </span>
-                                                    ))}
-                                                    {(r.domains || []).length > 3 && (
-                                                        <span style={{ fontSize: "10px", color: "#6b7280" }}>
-                                                            +{r.domains.length - 3} more
-                                                        </span>
+                                        return (
+                                            <tr
+                                                key={r._id}
+                                                onClick={() => setSelectedRole(r)}
+                                                style={{
+                                                    borderBottom: "1px solid #f1f5f9",
+                                                    cursor: "pointer",
+                                                    backgroundColor: isSelected ? "#f0fdf4" : "transparent",
+                                                    transition: "background-color 0.1s ease"
+                                                }}
+                                            >
+                                                <td style={{ padding: "12px 14px" }}>
+                                                    <div style={{ fontWeight: "600", color: "#0f172a" }}>{r.title}</div>
+                                                    {r.description ? (
+                                                        <div style={{ fontSize: "11.5px", color: "#64748b", maxWidth: "340px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                            {r.description}
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ fontSize: "11.5px", color: "#94a3b8", fontStyle: "italic" }}>
+                                                            Add a description
+                                                        </div>
                                                     )}
-                                                </div>
-                                            </td>
-                                            <td style={{ padding: "12px 14px", fontWeight: "700", color: qCount > 0 ? "#111827" : "#9ca3af" }}>
-                                                {qCount}
-                                            </td>
-                                            <td style={{ padding: "12px 14px" }}>
-                                                <span style={{
-                                                    padding: "2px 6px",
-                                                    borderRadius: "4px",
-                                                    fontSize: "10px",
-                                                    fontWeight: "700",
-                                                    backgroundColor: status === "Active" ? "#ecfdf5" : status === "Draft" ? "#fef3c7" : "#f3f4f6",
-                                                    color: status === "Active" ? "#065f46" : status === "Draft" ? "#92400e" : "#6b7280"
-                                                }}>
-                                                    {status.toUpperCase()}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: "12px 14px", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
-                                                <div style={{ display: "inline-flex", gap: "6px" }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleOpenEditModal(r)}
-                                                        className="wf-btn-outline"
-                                                        style={{ padding: "3px 8px", fontSize: "11px" }}
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setRoleToDelete(r);
-                                                            setDeleteModalOpen(true);
-                                                        }}
-                                                        style={{
-                                                            padding: "3px 8px",
-                                                            border: "1px solid #fecaca",
-                                                            borderRadius: "4px",
-                                                            backgroundColor: "#ffffff",
-                                                            color: "#dc2626",
-                                                            fontSize: "11px",
-                                                            cursor: "pointer"
-                                                        }}
-                                                    >
-                                                        ✕
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                                </td>
+                                                <td style={{ padding: "12px 14px", fontWeight: "700", color: qCount > 0 ? "#0f172a" : "#94a3b8" }}>
+                                                    {qCount}
+                                                </td>
+                                                <td style={{ padding: "12px 14px" }}>
+                                                    <span style={{
+                                                        padding: "2px 6px",
+                                                        borderRadius: "4px",
+                                                        fontSize: "10.5px",
+                                                        fontWeight: "700",
+                                                        backgroundColor: status === "Active" ? "#ecfdf5" : status === "Draft" ? "#fef3c7" : "#f1f5f9",
+                                                        color: status === "Active" ? "#065f46" : status === "Draft" ? "#92400e" : "#475569"
+                                                    }}>
+                                                        {status.toUpperCase()}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
                 </div>
 
                 {/* Column 2: Selected Role Detailed Inspector */}
                 <div className="wf-card" style={{ padding: "20px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
-                        ROLE SPECIFICATION
+                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+                        Role detail
                     </div>
 
                     {!selectedRole ? (
-                        <div style={{ padding: "40px 10px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
+                        <div style={{ padding: "40px 10px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
                             Select any role to view curriculum domains, search aliases, and question readiness.
                         </div>
                     ) : (
                         <div>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                                <h2 style={{ fontSize: "18px", fontWeight: "800", color: "#111827", margin: 0 }}>
+                                <h2 style={{ fontSize: "17px", fontWeight: "700", color: "#0f172a", margin: 0 }}>
                                     {selectedRole.title}
                                 </h2>
                                 <span style={{
                                     padding: "2px 8px",
                                     borderRadius: "4px",
-                                    fontSize: "11px",
+                                    fontSize: "10.5px",
                                     fontWeight: "700",
                                     backgroundColor: selectedRole.status === "Active" ? "#ecfdf5" : "#fef3c7",
                                     color: selectedRole.status === "Active" ? "#065f46" : "#92400e"
@@ -476,35 +438,37 @@ export default function Roles() {
                                 </span>
                             </div>
 
-                            <p style={{ fontSize: "13px", color: "#4b5563", lineHeight: "1.5", margin: "0 0 16px 0" }}>
-                                {selectedRole.description || "No description defined for this engineering track."}
+                            <p style={{ fontSize: "13px", color: "#475569", lineHeight: "1.5", margin: "0 0 16px 0" }}>
+                                {selectedRole.description || (
+                                    <span style={{ color: "#94a3b8", fontStyle: "italic" }}>No description defined for this engineering track.</span>
+                                )}
                             </p>
 
                             {/* Question Count Readiness Card */}
-                            <div style={{ padding: "12px", backgroundColor: "#f9fafb", borderRadius: "8px", border: "1px solid #f3f4f6", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div style={{ padding: "12px", backgroundColor: "#f8fafc", borderRadius: "8px", border: "1px solid #f1f5f9", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <div>
-                                    <div style={{ fontSize: "11px", color: "#6b7280" }}>Approved Questions in Bank</div>
-                                    <div style={{ fontSize: "18px", fontWeight: "800", color: "#111827" }}>
+                                    <div style={{ fontSize: "11px", color: "#64748b" }}>Questions in catalog</div>
+                                    <div style={{ fontSize: "18px", fontWeight: "800", color: "#0f172a" }}>
                                         {selectedRole.questions ?? selectedRole.questionCount ?? 0}
                                     </div>
                                 </div>
                                 <Link
                                     to={`/questionbank`}
                                     className="wf-btn-outline"
-                                    style={{ fontSize: "11px", padding: "5px 10px", textDecoration: "none" }}
+                                    style={{ fontSize: "11px", padding: "5px 12px", textDecoration: "none" }}
                                 >
-                                    Browse Bank →
+                                    Browse questions →
                                 </Link>
                             </div>
 
-                            {/* Curriculum Domains */}
+                            {/* Curriculum Domains with +N expansion */}
                             <div style={{ marginBottom: "16px" }}>
                                 <div style={{ fontSize: "11px", fontWeight: "700", color: "#475569", textTransform: "uppercase", marginBottom: "6px" }}>
-                                    Curriculum Domains ({selectedRole.domains?.length || 0})
+                                    Curriculum domains ({selectedRole.domains?.length || 0})
                                 </div>
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                                     {(selectedRole.domains || ["General"]).map((dom, idx) => (
-                                        <span key={idx} style={{ backgroundColor: "#eff6ff", color: "#1d4ed8", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "600" }}>
+                                        <span key={idx} style={{ backgroundColor: "#f1f5f9", color: "#334155", padding: "3px 8px", borderRadius: "4px", fontSize: "11.5px", fontWeight: "500" }}>
                                             {dom}
                                         </span>
                                     ))}
@@ -514,32 +478,32 @@ export default function Roles() {
                             {/* Search Aliases */}
                             <div style={{ marginBottom: "20px" }}>
                                 <div style={{ fontSize: "11px", fontWeight: "700", color: "#475569", textTransform: "uppercase", marginBottom: "6px" }}>
-                                    Taxonomy Search Aliases ({selectedRole.aliases?.length || 0})
+                                    Search aliases ({selectedRole.aliases?.length || 0})
                                 </div>
                                 {selectedRole.aliases && selectedRole.aliases.length > 0 ? (
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                                         {selectedRole.aliases.map((al, idx) => (
-                                            <span key={idx} style={{ backgroundColor: "#f3f4f6", color: "#4b5563", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>
+                                            <span key={idx} style={{ backgroundColor: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>
                                                 "{al}"
                                             </span>
                                         ))}
                                     </div>
                                 ) : (
-                                    <div style={{ fontSize: "12px", color: "#9ca3af", fontStyle: "italic" }}>
+                                    <div style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic" }}>
                                         No aliases mapped yet.
                                     </div>
                                 )}
                             </div>
 
-                            {/* Actions */}
-                            <div style={{ display: "flex", gap: "10px" }}>
+                            {/* Actions: Edit + Delete text button */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "14px", borderTop: "1px solid #f1f5f9" }}>
                                 <button
                                     type="button"
                                     onClick={() => handleOpenEditModal(selectedRole)}
-                                    className="wf-btn-primary"
-                                    style={{ flex: 1, padding: "8px", fontSize: "13px" }}
+                                    className="wf-btn-outline"
+                                    style={{ width: "100%", padding: "8px", fontSize: "13px", textAlign: "center" }}
                                 >
-                                    Edit Role Track
+                                    Edit role
                                 </button>
                                 <button
                                     type="button"
@@ -548,17 +512,17 @@ export default function Roles() {
                                         setDeleteModalOpen(true);
                                     }}
                                     style={{
-                                        padding: "8px 14px",
-                                        border: "1px solid #fecaca",
-                                        borderRadius: "8px",
-                                        backgroundColor: "#fef2f2",
+                                        background: "none",
+                                        border: "none",
                                         color: "#dc2626",
-                                        fontSize: "13px",
-                                        fontWeight: "600",
-                                        cursor: "pointer"
+                                        fontSize: "12px",
+                                        cursor: "pointer",
+                                        textDecoration: "underline",
+                                        alignSelf: "center",
+                                        padding: "4px"
                                     }}
                                 >
-                                    Delete
+                                    Delete role
                                 </button>
                             </div>
                         </div>

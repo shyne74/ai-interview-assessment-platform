@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail } from "lucide-react";
+import { Mail, ChevronDown } from "lucide-react";
 import api from "../utils/api";
 import AssignTestModal from "../components/AssignTestModal";
 
@@ -14,6 +14,8 @@ export default function CandidateData() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [actionToast, setActionToast] = useState("");
+    const [addChoiceOpen, setAddChoiceOpen] = useState(false);
+    const addChoiceRef = useRef(null);
 
     // Filtering, Search, Sort, Pagination
     const [searchTerm, setSearchTerm] = useState("");
@@ -242,27 +244,41 @@ export default function CandidateData() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
                 <div>
                     <h1 className="wf-page-title" style={{ margin: "0 0 4px 0" }}>
-                        Candidates directory
+                        Candidates
                     </h1>
                     <p className="wf-page-subtitle" style={{ margin: 0 }}>
-                        Review candidate profiles, assessment attempt history, integrity compliance, and assign customized tests.
+                        Candidate profiles, assessment results, and integrity records.
                     </p>
                 </div>
-                <div style={{ display: "flex", gap: "10px" }}>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setSelectedCandidate(null);
-                            setAssignModalOpen(true);
-                        }}
-                        className="wf-btn-outline"
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                    >
-                        <Mail size={15} /> Assign Test & Send Invite
-                    </button>
-                    <Link to="/admin/candidates/add" className="wf-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                        <span>+</span> Register Candidates
-                    </Link>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }} ref={addChoiceRef}>
+                    <div style={{ position: "relative" }}>
+                        <button
+                            type="button"
+                            onClick={() => setAddChoiceOpen(!addChoiceOpen)}
+                            className="wf-btn-primary"
+                            style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", padding: "8px 16px" }}
+                        >
+                            <span>+</span> Add candidates <ChevronDown size={14} />
+                        </button>
+                        {addChoiceOpen && (
+                            <div className="wf-menu-dropdown" style={{ right: 0, minWidth: "190px" }}>
+                                <Link
+                                    to="/admin/candidates/add"
+                                    className="wf-menu-item"
+                                    onClick={() => setAddChoiceOpen(false)}
+                                >
+                                    Single candidate
+                                </Link>
+                                <Link
+                                    to="/admin/candidates/add"
+                                    className="wf-menu-item"
+                                    onClick={() => setAddChoiceOpen(false)}
+                                >
+                                    Bulk import (CSV)
+                                </Link>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -356,14 +372,12 @@ export default function CandidateData() {
                     <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                             <thead>
-                                <tr style={{ borderBottom: "1.5px solid #e5e7eb", backgroundColor: "#f9fafb", textAlign: "left", color: "#6b7280", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                    <th style={{ padding: "12px 16px" }}>Candidate</th>
-                                    <th style={{ padding: "12px 16px" }}>Preferred Role</th>
-                                    <th style={{ padding: "12px 16px" }}>Attempts</th>
-                                    <th style={{ padding: "12px 16px" }}>Last Score</th>
-                                    <th style={{ padding: "12px 16px" }}>Integrity Status</th>
-                                    <th style={{ padding: "12px 16px" }}>Joined Date</th>
-                                    <th style={{ padding: "12px 16px", textAlign: "right" }}>Actions</th>
+                                <tr style={{ borderBottom: "1.5px solid #e2e8f0", backgroundColor: "#f8fafc", textAlign: "left", color: "#64748b", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    <th style={{ padding: "12px 16px" }}>Name</th>
+                                    <th style={{ padding: "12px 16px" }}>Email</th>
+                                    <th style={{ padding: "12px 16px" }}>Role</th>
+                                    <th style={{ padding: "12px 16px" }}>Last result</th>
+                                    <th style={{ padding: "12px 16px" }}>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -372,28 +386,27 @@ export default function CandidateData() {
                                         key={cand._id}
                                         onClick={() => handleRowClick(cand)}
                                         style={{
-                                            borderBottom: "1px solid #f3f4f6",
+                                            borderBottom: "1px solid #f1f5f9",
                                             cursor: "pointer",
-                                            backgroundColor: selectedCandidate?._id === cand._id ? "#f0f7ff" : "transparent",
+                                            backgroundColor: selectedCandidate?._id === cand._id ? "#f0fdf4" : "transparent",
                                             transition: "background-color 0.1s ease"
                                         }}
                                         onMouseEnter={(e) => { if (selectedCandidate?._id !== cand._id) e.currentTarget.style.backgroundColor = "#fafafa"; }}
                                         onMouseLeave={(e) => { if (selectedCandidate?._id !== cand._id) e.currentTarget.style.backgroundColor = "transparent"; }}
                                     >
-                                        <td style={{ padding: "12px 16px" }}>
-                                            <div style={{ fontWeight: "700", color: "#111827" }}>{cand.username}</div>
-                                            <div style={{ fontSize: "12px", color: "#6b7280" }}>{cand.email}</div>
+                                        <td style={{ padding: "12px 16px", fontWeight: "600", color: "#0f172a" }}>
+                                            {cand.username}
                                         </td>
-                                        <td style={{ padding: "12px 16px", color: "#374151" }}>
-                                            <span style={{ backgroundColor: "#f3f4f6", padding: "3px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: "500" }}>
+                                        <td style={{ padding: "12px 16px", color: "#64748b" }}>
+                                            {cand.email}
+                                        </td>
+                                        <td style={{ padding: "12px 16px", color: "#334155" }}>
+                                            <span style={{ backgroundColor: "#f1f5f9", padding: "2px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: "500" }}>
                                                 {cand.preferredRole || "General"}
                                             </span>
                                         </td>
-                                        <td style={{ padding: "12px 16px", fontWeight: "600", color: "#111827" }}>
-                                            {cand.attemptCount} {cand.attemptCount === 1 ? "attempt" : "attempts"}
-                                        </td>
-                                        <td style={{ padding: "12px 16px", fontWeight: "700", color: cand.lastScore !== null ? (cand.lastScore >= 7 ? "#059669" : "#d97706") : "#9ca3af" }}>
-                                            {cand.lastScore !== null ? `${cand.lastScore} / 10` : "—"}
+                                        <td style={{ padding: "12px 16px", fontWeight: "600", color: cand.lastScore !== null ? (cand.lastScore >= 7 ? "#059669" : "#d97706") : "#94a3b8" }}>
+                                            {cand.lastScore !== null ? `${cand.lastScore} / 10` : "No attempts"}
                                         </td>
                                         <td style={{ padding: "12px 16px" }}>
                                             <span style={{
@@ -404,46 +417,14 @@ export default function CandidateData() {
                                                 backgroundColor:
                                                     cand.integrityStatus === "High" ? "#fee2e2" :
                                                     cand.integrityStatus === "Medium" ? "#fef3c7" :
-                                                    cand.integrityStatus === "Clean" ? "#ecfdf5" : "#f3f4f6",
+                                                    cand.integrityStatus === "Clean" ? "#ecfdf5" : "#f1f5f9",
                                                 color:
                                                     cand.integrityStatus === "High" ? "#991b1b" :
                                                     cand.integrityStatus === "Medium" ? "#92400e" :
-                                                    cand.integrityStatus === "Clean" ? "#065f46" : "#6b7280"
+                                                    cand.integrityStatus === "Clean" ? "#065f46" : "#64748b"
                                             }}>
                                                 {cand.integrityStatus}
                                             </span>
-                                        </td>
-                                        <td style={{ padding: "12px 16px", color: "#6b7280", fontSize: "12px" }}>
-                                            {cand.joinedFormatted}
-                                        </td>
-                                        <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                                            <div style={{ display: "inline-flex", gap: "8px" }} onClick={(e) => e.stopPropagation()}>
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => handleOpenAssignModal(cand, e)}
-                                                    className="wf-btn-outline"
-                                                    style={{ padding: "4px 10px", fontSize: "11px", fontWeight: "600" }}
-                                                    title="Assign custom assessment"
-                                                >
-                                                    + Assign
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => handleOpenDeleteModal(cand, e)}
-                                                    style={{
-                                                        padding: "4px 8px",
-                                                        fontSize: "11px",
-                                                        border: "1px solid #fecaca",
-                                                        borderRadius: "6px",
-                                                        backgroundColor: "#ffffff",
-                                                        color: "#dc2626",
-                                                        cursor: "pointer"
-                                                    }}
-                                                    title="Remove candidate account"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </div>
                                         </td>
                                     </tr>
                                 ))}

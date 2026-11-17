@@ -320,7 +320,9 @@ export default function AdminBatchTracking() {
                         <ArrowLeft size={14} /> Back to Batches
                     </Link>
                     <span style={{ fontSize: "14px", color: "#94a3b8" }}>/</span>
-                    <span style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>{batch.name}</span>
+                    <span style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>
+                        {(batch.name || "").replace(/\s*\d{10,}\s*$/, "").trim() || batch.name}
+                    </span>
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -445,7 +447,7 @@ export default function AdminBatchTracking() {
                     <div>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                             <h1 style={{ fontSize: "20px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                                {batch.name}
+                                {(batch.name || "").replace(/\s*\d{10,}\s*$/, "").trim() || batch.name}
                             </h1>
                             <span
                                 style={{
